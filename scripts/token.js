@@ -78,7 +78,8 @@ Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
     if (update.rotation === undefined) return;
 
     // Check if this token is managed by 3d-to-iso
-    const is3d = tokenDoc.getFlag("3d-to-iso", "enabled");
+    // Check both the token document and its source actor
+    const is3d = tokenDoc.getFlag("3d-to-iso", "enabled") || tokenDoc.actor?.getFlag("3d-to-iso", "enabled");
     if (!is3d) return;
 
     // Get current texture
@@ -100,13 +101,14 @@ Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
     else if (rotation >= 270 && rotation < 360) facing = "NW";
 
     // Use regex to find and replace the facing suffix
+    // Matches _NE, _NW, _SE, _SW before the file extension
     const regex = /_(NE|NW|SE|SW)(?=\.[^.]+$)/i;
     
     if (regex.test(currentSrc)) {
         const newSrc = currentSrc.replace(regex, `_${facing}`);
         
         // If the path actually changed, update it in the pending update object
-        if (newSrc !== currentSrc) {
+        if (newSrc.toLowerCase() !== currentSrc.toLowerCase()) {
             if (!update.texture) update.texture = {};
             update.texture.src = newSrc;
             console.log(`3d-to-iso | Switching texture for ${tokenDoc.name} to ${facing} (${rotation}°)`);
