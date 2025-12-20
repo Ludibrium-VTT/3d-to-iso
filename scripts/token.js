@@ -83,6 +83,7 @@ Hooks.once("ready", () => {
                     ...context,
                     tab: context.tabs[partId],
                     isometric: {
+                        enabled: !!actor?.getFlag("3d-to-iso", "enabled"),
                         modelPath: actor?.getFlag("3d-to-iso", "modelPath") || "",
                         hasAdjustments: !!actor?.getFlag("3d-to-iso", "adjustments")
                     }

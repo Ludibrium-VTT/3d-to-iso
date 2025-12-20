@@ -36,7 +36,9 @@
     "AssignToActor": "Process & Assign to Token",
     "TargetActor": "Target Actor: {name}",
     "Set3DModel": "3D Isometric Model",
-    "Set3DModelNotes": "Configure a 3D model to automatically generate isometric token textures.",
+    "Enable3D": "Enable 3D Isometric",
+    "Enable3DNotes": "Check this to enable automatic rotation for this token, even when using external assets like Hero Forge.",
+    "Set3DModelNotes": "Configure the 3D model and render isometric facings.",
     "OpenRenderer": "Open 3D Renderer",
     "CurrentModel": "Current Model"
   }
