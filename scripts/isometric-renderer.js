@@ -136,10 +136,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Per-facing adjustments
         const savedAdjustments = this.actor?.getFlag("3d-to-iso", "adjustments");
         this.adjustments = savedAdjustments || {
+            N:  { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
             NE: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
-            NW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
+            E:  { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
             SE: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
-            SW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 }
+            S:  { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
+            SW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
+            W:  { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
+            NW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 }
         };
         
         // Three.js instances
@@ -318,9 +322,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         let baseYR = 0;
 
         switch (this.facing) {
+            case "E":  baseYR = Math.PI * 0.00; break;
             case "NE": baseYR = Math.PI * 0.25; break;
+            case "N":  baseYR = Math.PI * 0.50; break;
             case "NW": baseYR = Math.PI * 0.75; break;
+            case "W":  baseYR = Math.PI * 1.00; break;
             case "SW": baseYR = Math.PI * 1.25; break;
+            case "S":  baseYR = Math.PI * 1.50; break;
             case "SE": baseYR = Math.PI * 1.75; break;
         }
 
@@ -600,14 +608,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     async _onRenderAll() {
         if (!this.currentModel) return ui.notifications.warn("No model loaded.");
         
-        const facings = ["NE", "NW", "SE", "SW"];
-        ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: 0, total: 4 }));
+        const facings = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+        ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: 0, total: 8 }));
         
         const results = {};
         for (let i = 0; i < facings.length; i++) {
             const path = await this._onRenderAndSave(facings[i]);
             results[facings[i]] = path;
-            ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: i + 1, total: 4 }));
+            ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: i + 1, total: 8 }));
         }
         
         ui.notifications.info("Batch render complete.");

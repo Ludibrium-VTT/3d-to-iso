@@ -28,10 +28,14 @@
         <div class="form-group">
             <label>{{localize "3D_TO_ISO.Facing"}}</label>
             <div class="form-fields facings">
+                <label><input type="radio" name="facing" value="N" {{#if (eq facing "N")}}checked{{/if}}> {{localize "3D_TO_ISO.N"}}</label>
                 <label><input type="radio" name="facing" value="NE" {{#if (eq facing "NE")}}checked{{/if}}> {{localize "3D_TO_ISO.NE"}}</label>
-                <label><input type="radio" name="facing" value="NW" {{#if (eq facing "NW")}}checked{{/if}}> {{localize "3D_TO_ISO.NW"}}</label>
+                <label><input type="radio" name="facing" value="E" {{#if (eq facing "E")}}checked{{/if}}> {{localize "3D_TO_ISO.E"}}</label>
                 <label><input type="radio" name="facing" value="SE" {{#if (eq facing "SE")}}checked{{/if}}> {{localize "3D_TO_ISO.SE"}}</label>
+                <label><input type="radio" name="facing" value="S" {{#if (eq facing "S")}}checked{{/if}}> {{localize "3D_TO_ISO.S"}}</label>
                 <label><input type="radio" name="facing" value="SW" {{#if (eq facing "SW")}}checked{{/if}}> {{localize "3D_TO_ISO.SW"}}</label>
+                <label><input type="radio" name="facing" value="W" {{#if (eq facing "W")}}checked{{/if}}> {{localize "3D_TO_ISO.W"}}</label>
+                <label><input type="radio" name="facing" value="NW" {{#if (eq facing "NW")}}checked{{/if}}> {{localize "3D_TO_ISO.NW"}}</label>
             </div>
         </div>
 

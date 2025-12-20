@@ -42,8 +42,9 @@
 
 .isometric-renderer-app .facings {
     display: flex;
-    gap: 1rem;
-    justify-content: space-around;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: start;
 }
 
 .isometric-renderer-app .facings label {

@@ -88,21 +88,14 @@ Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
 
     // Determine the new facing based on rotation
     const rotation = (update.rotation % 360 + 360) % 360; // Normalize 0-359
-    let facing = "NE";
+    // Determine the new facing based on rotation (8-direction mapping)
+    // 0 is North, 90 is East, etc.
+    const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    const index = Math.floor(((rotation + 22.5) % 360) / 45);
+    let facing = directions[index];
 
-    // Mapping ranges (standard isometric offsets)
-    // NE: 0-90 (Center 45)
-    // SE: 90-180 (Center 135)
-    // SW: 180-270 (Center 225)
-    // NW: 270-360 (Center 315)
-    if (rotation >= 0 && rotation < 90) facing = "NE";
-    else if (rotation >= 90 && rotation < 180) facing = "SE";
-    else if (rotation >= 180 && rotation < 270) facing = "SW";
-    else if (rotation >= 270 && rotation < 360) facing = "NW";
-
-    // Use regex to find and replace the facing suffix
-    // Matches _NE, _NW, _SE, _SW before the file extension
-    const regex = /_(NE|NW|SE|SW)(?=\.[^.]+$)/i;
+    // Matches _N, _NE, _E, etc. before the file extension
+    const regex = /_(NE|NW|SE|SW|N|E|S|W)(?=\.[^.]+$)/i;
     
     if (regex.test(currentSrc)) {
         const newSrc = currentSrc.replace(regex, `_${facing}`);
