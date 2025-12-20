@@ -416,17 +416,27 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.facing = prevFacing;
         this._updateCameraRotation();
 
-        // Save
-        const filename = `${this.modelPath.split('/').pop().split('.')[0]}_${facing}.png`;
+        // Robust filename extraction
+        const cleanPath = decodeURIComponent(this.modelPath.split('?')[0]);
+        const modelFile = cleanPath.split('/').pop();
+        const lastDot = modelFile.lastIndexOf('.');
+        const baseName = lastDot > -1 ? modelFile.substring(0, lastDot) : modelFile;
+        
+        // Sanitize baseName and generate filename
+        const safeBaseName = baseName.replace(/[^a-z0-9_\-\.]/gi, '_');
+        const filename = `${safeBaseName}_${facing}.png`;
+        const uploadDir = "isometric-renders";
         const file = new File([blob], filename, { type: "image/png" });
-        const path = "isometric-renders";
 
         try {
-            await FilePicker.upload("data", path, file);
-            ui.notifications.info(`Saved ${facing} render to ${path}/${filename}`);
-            return `${path}/${filename}`;
+            const response = await FilePicker.upload("data", uploadDir, file);
+            const actualPath = typeof response === "string" ? response : response.path;
+            
+            ui.notifications.info(`Saved ${facing} render to ${actualPath}`);
+            return actualPath;
         } catch (err) {
-            ui.notifications.error(`Upload failed: ${err.message}`);
+            ui.notifications.error(`Upload failed: ${err.message}. Make sure the 'isometric-renders' directory exists.`);
+            return null;
         }
     }
 
