@@ -1,5 +1,122 @@
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
+/* -------------------------------------------- */
+/*  Shaders                                     */
+/* -------------------------------------------- */
+
+/* -------------------------------------------- */
+/*  Post-Processing Shaders                     */
+/* -------------------------------------------- */
+
+const POST_VERTEX_SHADER = `
+    varying vec2 vUv;
+    void main() {
+        vUv = uv;
+        gl_Position = vec4(position, 1.0);
+    }
+`;
+
+const SEPIA_FRAGMENT_SHADER = `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+        vec4 color = texture2D(tDiffuse, vUv);
+        vec3 c = color.rgb;
+        gl_FragColor.r = dot(c, vec3(0.393, 0.769, 0.189));
+        gl_FragColor.g = dot(c, vec3(0.349, 0.686, 0.168));
+        gl_FragColor.b = dot(c, vec3(0.272, 0.534, 0.131));
+        gl_FragColor.a = color.a;
+    }
+`;
+
+const DOTSCREEN_FRAGMENT_SHADER = `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    varying vec2 vUv;
+    float pattern() {
+        float angle = 1.05;
+        float scale = 1.0;
+        float s = sin(angle), c = cos(angle);
+        vec2 tex = vUv * resolution - (resolution * 0.5);
+        vec2 point = vec2(c * tex.x - s * tex.y, s * tex.x + c * tex.y) * scale;
+        return (sin(point.x) * sin(point.y)) * 4.0;
+    }
+    void main() {
+        vec4 color = texture2D(tDiffuse, vUv);
+        float average = (color.r + color.g + color.b) / 3.0;
+        gl_FragColor = vec4(vec3(average * 10.0 - 5.0 + pattern()), color.a);
+    }
+`;
+
+const RGBSHIFT_FRAGMENT_SHADER = `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+        float amount = 0.005;
+        float angle = 0.0;
+        vec2 offset = amount * vec2(cos(angle), sin(angle));
+        vec4 cr = texture2D(tDiffuse, vUv + offset);
+        vec4 cga = texture2D(tDiffuse, vUv);
+        vec4 cb = texture2D(tDiffuse, vUv - offset);
+        gl_FragColor = vec4(cr.r, cga.g, cb.b, cga.a);
+    }
+`;
+
+const BLUEPRINT_FRAGMENT_SHADER = `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    varying vec2 vUv;
+    void main() {
+        vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
+        
+        // Simple Sobel-like edge detection
+        float tl = texture2D(tDiffuse, vUv + texel * vec2(-1, 1)).r;
+        float l  = texture2D(tDiffuse, vUv + texel * vec2(-1, 0)).r;
+        float bl = texture2D(tDiffuse, vUv + texel * vec2(-1,-1)).r;
+        float t  = texture2D(tDiffuse, vUv + texel * vec2( 0, 1)).r;
+        float b  = texture2D(tDiffuse, vUv + texel * vec2( 0,-1)).r;
+        float tr = texture2D(tDiffuse, vUv + texel * vec2( 1, 1)).r;
+        float r  = texture2D(tDiffuse, vUv + texel * vec2( 1, 0)).r;
+        float br = texture2D(tDiffuse, vUv + texel * vec2( 1,-1)).r;
+        
+        float x = (tl + 2.0*l + bl) - (tr + 2.0*r + br);
+        float y = (tl + 2.0*t + tr) - (bl + 2.0*b + br);
+        float edge = sqrt(x*x + y*y);
+        
+        vec3 blue = vec3(0.0, 0.3, 0.6);
+        vec3 white = vec3(1.0, 1.0, 1.0);
+        gl_FragColor = vec4(mix(blue, white, edge), texture2D(tDiffuse, vUv).a);
+    }
+`;
+
+const FILM_FRAGMENT_SHADER = `
+    uniform sampler2D tDiffuse;
+    uniform float time;
+    varying vec2 vUv;
+    
+    float rand(vec2 co){
+        return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    void main() {
+        vec4 color = texture2D(tDiffuse, vUv);
+        float noise = (rand(vUv + time) - 0.5) * 0.15;
+        float scanline = sin(vUv.y * 800.0) * 0.04;
+        gl_FragColor = vec4(color.rgb + noise - scanline, color.a);
+    }
+`;
+
+const VIGNETTE_FRAGMENT_SHADER = `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+        vec4 color = texture2D(tDiffuse, vUv);
+        float dist = distance(vUv, vec2(0.5, 0.5));
+        color.rgb *= smoothstep(0.8, 0.2, dist);
+        gl_FragColor = color;
+    }
+`;
+
 /**
  * Application for rendering 3D models to static isometric images.
  */
@@ -34,6 +151,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.loader = null;
         this.currentModel = null;
         this.baseCameraDistance = 50;
+        this.shaderMode = "none";
+        
+        // Post-Processing
+        this.renderTarget = null;
+        this.postScene = null;
+        this.postCamera = null;
+        this.screenQuad = null;
     }
 
     static DEFAULT_OPTIONS = {
@@ -65,6 +189,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             modelPath: this.modelPath,
             facing: this.facing,
             resolution: this.resolution,
+            shaderMode: this.shaderMode,
             adj: adj,
             actor: this.actor,
             displayValues: {
@@ -81,18 +206,20 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     /* -------------------------------------------- */
 
     _onRender(context, options) {
+        super._onRender(context, options);
+        if ( !this.element ) return;
+
         const container = this.element.querySelector("#three-container");
         if (!container) return;
 
         if (!this.renderer) {
-            this._initializeThreeJS();
+            this._initializeThreeJS(container);
         } else {
             // Re-attach existing renderer's canvas
             container.appendChild(this.renderer.domElement);
-            // Resize to keep square within new container bounds
+            // Resize to keep square within current container bounds
             const size = Math.min(container.clientWidth, container.clientHeight) - 20;
-            this.renderer.setSize(size, size);
-            // Ensure model is still in scene (it should be)
+            if ( size > 0 ) this.renderer.setSize(size, size);
             this._updateCameraRotation();
         }
         this._attachEventListeners();
@@ -100,8 +227,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
-    _initializeThreeJS() {
-        const container = this.element.querySelector("#three-container");
+    _initializeThreeJS(container) {
         if (!container) return;
 
         // Setup Scene
@@ -145,7 +271,9 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.loader.setDRACOLoader(dracoLoader);
 
         // Initial render trigger
-        if (this.modelPath) this._loadModel(this.modelPath);
+        if (this.currentModel) this._loadModel(this.modelPath);
+        
+        this._setupPostProcessing(size);
         
         // Start Animation Loop
         this._animate();
@@ -153,10 +281,29 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
+    _drawThreeJSFrame() {
+        if (!this.renderer) return;
+        if (this.shaderMode === "none") {
+            this.renderer.setRenderTarget(null);
+            this.renderer.render(this.scene, this.camera);
+        } else {
+            this.renderer.setRenderTarget(this.renderTarget);
+            this.renderer.render(this.scene, this.camera);
+            this.renderer.setRenderTarget(null);
+            
+            // Update time if needed
+            if (this.screenQuad && this.screenQuad.material.uniforms.time) {
+                this.screenQuad.material.uniforms.time.value = performance.now() / 1000;
+            }
+            
+            this.renderer.render(this.postScene, this.postCamera);
+        }
+    }
+
     _animate() {
         if (!this.renderer) return;
         requestAnimationFrame(() => this._animate());
-        this.renderer.render(this.scene, this.camera);
+        this._drawThreeJSFrame();
     }
 
     /* -------------------------------------------- */
@@ -241,7 +388,6 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
             // Force immediate update of camera and projection
             this._updateCameraRotation();
-
         } catch (err) {
             console.error(err);
             ui.notifications.error(`Failed to load model: ${err.message}`);
@@ -329,6 +475,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                 }
             });
 
+            if (el.name === "shaderMode") {
+                el.addEventListener("change", (event) => {
+                    this.shaderMode = event.target.value;
+                    this._updatePostShader();
+                });
+            }
+
             // Live preview for sliders
             if (el.type === "range") {
                 el.addEventListener("input", (event) => {
@@ -406,7 +559,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         // Resize renderer for high-res render
         this.renderer.setSize(targetRes, targetRes, false);
-        this.renderer.render(this.scene, this.camera);
+        this._setupPostProcessing(targetRes);
+        this._drawThreeJSFrame();
 
         // Extract PNG
         const blob = await new Promise(resolve => this.renderer.domElement.toBlob(resolve, 'image/png'));
@@ -490,6 +644,45 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         ui.notifications.info(`Successfully assigned 3D renders to ${this.actor.name}.`);
         this.close();
+    }
+
+    /* -------------------------------------------- */
+
+    _setupPostProcessing(size) {
+        if (this.renderTarget) this.renderTarget.dispose();
+        
+        this.renderTarget = new THREE.WebGLRenderTarget(size, size);
+        this.postScene = new THREE.Scene();
+        this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        
+        const geom = new THREE.PlaneGeometry(2, 2);
+        const mat = new THREE.ShaderMaterial({
+            vertexShader: POST_VERTEX_SHADER,
+            fragmentShader: SEPIA_FRAGMENT_SHADER,
+            uniforms: {
+                tDiffuse: { value: this.renderTarget.texture },
+                resolution: { value: new THREE.Vector2(size, size) },
+                time: { value: 0 }
+            }
+        });
+        
+        this.screenQuad = new THREE.Mesh(geom, mat);
+        this.postScene.add(this.screenQuad);
+        this._updatePostShader();
+    }
+
+    _updatePostShader() {
+        if (!this.screenQuad) return;
+        
+        let shader = SEPIA_FRAGMENT_SHADER;
+        if (this.shaderMode === "dotscreen") shader = DOTSCREEN_FRAGMENT_SHADER;
+        if (this.shaderMode === "rgbshift") shader = RGBSHIFT_FRAGMENT_SHADER;
+        if (this.shaderMode === "blueprint") shader = BLUEPRINT_FRAGMENT_SHADER;
+        if (this.shaderMode === "film") shader = FILM_FRAGMENT_SHADER;
+        if (this.shaderMode === "vignette") shader = VIGNETTE_FRAGMENT_SHADER;
+        
+        this.screenQuad.material.fragmentShader = shader;
+        this.screenQuad.material.needsUpdate = true;
     }
 
     /* -------------------------------------------- */
