@@ -377,8 +377,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this._updateCameraRotation();
 
         // Save
-        const timestamp = Date.now();
-        const filename = `${this.modelPath.split('/').pop().split('.')[0]}_${facing}_${timestamp}.png`;
+        const filename = `${this.modelPath.split('/').pop().split('.')[0]}_${facing}.png`;
         const file = new File([blob], filename, { type: "image/png" });
         const path = "isometric-renders";
 
