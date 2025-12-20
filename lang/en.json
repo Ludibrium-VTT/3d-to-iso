@@ -18,6 +18,12 @@
     "ResetCurrent": "Reset Current Facing",
     "ResetAll": "Reset All Facings",
     "RenderAll": "Render All Facings",
-    "BatchProgress": "Rendering all facings... ({current}/{total})"
+    "BatchProgress": "Rendering all facings... ({current}/{total})",
+    "AssignToActor": "Process & Assign to Token",
+    "TargetActor": "Target Actor: {name}",
+    "Set3DModel": "3D Isometric Model",
+    "Set3DModelNotes": "Configure a 3D model to automatically generate isometric token textures.",
+    "OpenRenderer": "Open 3D Renderer",
+    "CurrentModel": "Current Model"
   }
 }

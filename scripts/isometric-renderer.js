@@ -6,12 +6,19 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2) {
     constructor(options = {}) {
         super(options);
-        this.modelPath = "";
+        
+        // Target Actor and Token (if launched from a config sheet)
+        this.actor = options.actor || null;
+        this.token = options.token || null;
+
+        // Default settings
+        this.modelPath = this.actor?.getFlag("3d-to-iso", "modelPath") || "";
         this.facing = "NE";
         this.resolution = "1024";
-
+        
         // Per-facing adjustments
-        this.adjustments = {
+        const savedAdjustments = this.actor?.getFlag("3d-to-iso", "adjustments");
+        this.adjustments = savedAdjustments || {
             NE: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
             NW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
             SE: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
@@ -20,11 +27,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         
         // Three.js instances
         this.scene = null;
+        this.modelPivot = null;
+        this.modelWrapper = null;
         this.camera = null;
         this.renderer = null;
         this.loader = null;
         this.currentModel = null;
-        this.baseCameraDistance = 20;
+        this.baseCameraDistance = 50;
     }
 
     static DEFAULT_OPTIONS = {
@@ -57,6 +66,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             facing: this.facing,
             resolution: this.resolution,
             adj: adj,
+            actor: this.actor,
             displayValues: {
                 rx: adj.rx.toFixed(0),
                 ry: adj.ry.toFixed(0),
@@ -346,6 +356,12 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Buttons
         html.querySelector(".render-btn").addEventListener("click", () => this._onRenderAndSave());
         html.querySelector(".render-all-btn").addEventListener("click", () => this._onRenderAll());
+        
+        const assignBtn = html.querySelector(".assign-actor-btn");
+        if (assignBtn) {
+            assignBtn.addEventListener("click", () => this._onProcessAndAssign());
+        }
+
         html.querySelector(".reset-current-btn").addEventListener("click", () => {
             this.adjustments[this.facing] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
             this._updateCameraRotation();
@@ -422,12 +438,47 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const facings = ["NE", "NW", "SE", "SW"];
         ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: 0, total: 4 }));
         
+        const results = {};
         for (let i = 0; i < facings.length; i++) {
-            await this._onRenderAndSave(facings[i]);
+            const path = await this._onRenderAndSave(facings[i]);
+            results[facings[i]] = path;
             ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: i + 1, total: 4 }));
         }
         
         ui.notifications.info("Batch render complete.");
+        return results;
+    }
+
+    /* -------------------------------------------- */
+
+    async _onProcessAndAssign() {
+        if (!this.actor) return ui.notifications.warn("No target actor for this operation.");
+        if (!this.modelPath) return ui.notifications.warn("No model selected.");
+
+        // 1. Perform batch render
+        const paths = await this._onRenderAll();
+        if (!paths || !paths.NE) return;
+
+        // 2. Save settings to Actor flags (Base Prototype)
+        await this.actor.setFlag("3d-to-iso", "modelPath", this.modelPath);
+        await this.actor.setFlag("3d-to-iso", "adjustments", this.adjustments);
+
+        // 3. Update active token instance if we have one
+        if (this.token && this.token instanceof TokenDocument) {
+            await this.token.update({
+                "texture.src": paths.NE,
+                "flags.3d-to-iso.enabled": true
+            });
+        }
+
+        // 4. Update prototype token on the base actor
+        await this.actor.update({
+            "prototypeToken.texture.src": paths.NE,
+            "prototypeToken.flags.3d-to-iso.enabled": true
+        });
+
+        ui.notifications.info(`Successfully assigned 3D renders to ${this.actor.name}.`);
+        this.close();
     }
 
     /* -------------------------------------------- */
@@ -451,6 +502,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 // Hook to add to sidebar or create macro
 Hooks.once("init", () => {
     game.modules.get("3d-to-iso").api = {
-        open: () => new IsometricRenderer().render(true)
+        open: () => new IsometricRenderer().render(true),
+        IsometricRenderer: IsometricRenderer
     };
 });

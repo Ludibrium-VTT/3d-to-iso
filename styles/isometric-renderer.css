@@ -81,3 +81,26 @@
     flex: 1;
     font-size: 0.8rem;
 }
+
+.isometric-renderer-app .target-actor {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+    border: 1px solid var(--color-border);
+}
+
+.isometric-renderer-app .assign-actor-btn {
+    width: 100%;
+    height: 40px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    background: #2b5d2b;
+    color: white !important;
+    border: 1px solid #1e3d1e;
+}
+
+.isometric-renderer-app .assign-actor-btn:hover {
+    background: #3a7a3a;
+    box-shadow: 0 0 5px #3a7a3a;
+}

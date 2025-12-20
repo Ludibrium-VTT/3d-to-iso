@@ -14,6 +14,17 @@
             </div>
         </div>
 
+        {{#if actor}}
+        <div class="form-group target-actor">
+            <label>{{localize "3D_TO_ISO.TargetActor" name=actor.name}}</label>
+            <div class="form-fields">
+                <button type="button" class="assign-actor-btn primary" title="{{localize '3D_TO_ISO.AssignToActor'}}">
+                    <i class="fas fa-user-check"></i> {{localize "3D_TO_ISO.AssignToActor"}}
+                </button>
+            </div>
+        </div>
+        {{/if}}
+
         <div class="form-group">
             <label>{{localize "3D_TO_ISO.Facing"}}</label>
             <div class="form-fields facings">

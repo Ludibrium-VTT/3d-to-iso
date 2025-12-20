@@ -18,7 +18,8 @@
     "vendor/DRACOLoader.js"
   ],
   "esmodules": [
-    "scripts/isometric-renderer.js"
+    "scripts/isometric-renderer.js",
+    "scripts/token-integration.js"
   ],
   "languages": [
     {

@@ -1,0 +1,16 @@
+<div class="tab {{tab.cssClass}}" data-tab="isometricModel" data-group="sheet">
+    <fieldset>
+        <legend><i class="fas fa-cube"></i> {{localize "3D_TO_ISO.Set3DModel"}}</legend>
+        <div class="form-group">
+            <p class="notes">{{localize "3D_TO_ISO.Set3DModelNotes"}}</p>
+            <div class="form-fields">
+                <button type="button" class="open-3d-renderer">
+                    <i class="fas fa-camera"></i> {{localize "3D_TO_ISO.OpenRenderer"}}
+                </button>
+            </div>
+            {{#if isometric.modelPath}}
+            <p class="notes"><strong>{{localize "3D_TO_ISO.CurrentModel"}}:</strong> {{isometric.modelPath}}</p>
+            {{/if}}
+        </div>
+    </fieldset>
+</div>
