@@ -693,7 +693,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         await this.actor.setFlag("3d-to-iso", "modelPath", this.modelPath);
         await this.actor.setFlag("3d-to-iso", "adjustments", this.adjustments);
 
-        // 3. Update active token instance if we have one
+        // 3. Update the available facings flag based on our batch render results
+        const directions = Object.keys(paths);
+        if (directions.length > 0) {
+            await this.actor.setFlag("3d-to-iso", "availableFacings", directions);
+        }
+
+        // 4. Update active token instance if we have one
         if (this.token && this.token instanceof TokenDocument) {
             await this.token.update({
                 "texture.src": paths.NE,
