@@ -39,8 +39,8 @@ Hooks.once("ready", () => {
         const originalPreparePartContext = ConfigClass.prototype._preparePartContext;
         ConfigClass.prototype._preparePartContext = async function(partId, context, options) {
             if (partId === "isometricModel") {
-                // Actor handling: TokenDocument has .actor, PrototypeToken has .parent
-                const actor = this.document.actor || this.document.parent;
+                const doc = this.document;
+                const actor = (doc instanceof Actor) ? doc : doc?.actor || doc?.parent;
                 return {
                     ...context,
                     tab: context.tabs[partId],
@@ -63,14 +63,15 @@ Hooks.once("ready", () => {
             if (btn) {
                 btn.addEventListener("click", (event) => {
                     event.preventDefault();
-                    const actor = this.document.actor || this.document.parent;
+                    const doc = this.document;
+                    const actor = (doc instanceof Actor) ? doc : doc?.actor || doc?.parent;
                     if (!actor) return ui.notifications.warn("No Actor associated with this token.");
                     
                     // Open our custom renderer with the actor and token targeted
                     const { IsometricRenderer } = game.modules.get("3d-to-iso").api;
                     new IsometricRenderer({ 
                         actor,
-                        token: this.document
+                        token: doc
                     }).render(true);
                 });
             }
