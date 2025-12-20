@@ -105,7 +105,9 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         // Setup Camera (Orthographic) - ALWAYS SQUARE for 1:1 render output
         const d = 5;
-        this.camera = new THREE.OrthographicCamera(-d, d, d, -d, 0.1, 1000);
+        // Using very large near/far planes to prevent any clipping in orthographic view
+        this.camera = new THREE.OrthographicCamera(-d, d, d, -d, -1000, 1000);
+        this.baseCameraDistance = 50; 
         this._updateCameraRotation();
         this.scene.add(this.camera);
 
@@ -210,22 +212,24 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this.currentModel = gltf.scene;
             this.modelWrapper.add(this.currentModel);
 
-            // Compute precise bounding box
-            const box = new THREE.Box3().setFromObject(this.currentModel);
+            // Compute precise bounding box including all children
+            this.currentModel.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(this.modelWrapper);
+            
             const center = new THREE.Vector3();
             const size = new THREE.Vector3();
             box.getCenter(center);
             box.getSize(size);
 
-            // Center the model's geometry by offsetting it within the wrapper
-            this.currentModel.position.set(-center.x, -center.y, -center.z);
+            // Shift currentModel within modelWrapper so the center of its geometry is at (0,0,0)
+            this.currentModel.position.sub(center);
 
             // Auto-scale modelWrapper to fit comfortably in ortho view
             const maxDim = Math.max(size.x, size.y, size.z);
             const scale = (maxDim > 0) ? 6 / maxDim : 1; 
             this.modelWrapper.scale.setScalar(scale);
 
-            // Force immediate update
+            // Force immediate update of camera and projection
             this._updateCameraRotation();
 
         } catch (err) {
@@ -274,6 +278,26 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         window.addEventListener("mouseup", () => {
             isDragging = false;
         });
+
+        // Mouse Wheel for Zoom
+        container.addEventListener("wheel", (e) => {
+            e.preventDefault();
+            const adj = this.adjustments[this.facing];
+            const delta = e.deltaY > 0 ? 0.9 : 1.1; // Multiplicative zoom for smoother feel
+            
+            // Apply zoom with clamping (matching slider limits 0.1 to 5)
+            const newZoom = Math.min(Math.max(adj.zoom * delta, 0.1), 5);
+            adj.zoom = newZoom;
+
+            this._updateCameraRotation();
+
+            // Sync Slider and Label
+            const zoomInput = html.querySelector('input[name="zoom"]');
+            if (zoomInput) {
+                zoomInput.value = adj.zoom;
+                this._updateLabel(zoomInput, "zoom", adj.zoom);
+            }
+        }, { passive: false });
 
         // Input changes
         html.querySelectorAll("input, select").forEach(el => {
