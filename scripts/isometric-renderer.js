@@ -117,6 +117,45 @@ const VIGNETTE_FRAGMENT_SHADER = `
     }
 `;
 
+const BLUEPRINT_FILM_FRAGMENT_SHADER = `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    uniform float time;
+    varying vec2 vUv;
+
+    float rand(vec2 co){
+        return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    void main() {
+        vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
+        
+        // Edge detection
+        float tl = texture2D(tDiffuse, vUv + texel * vec2(-1, 1)).r;
+        float l  = texture2D(tDiffuse, vUv + texel * vec2(-1, 0)).r;
+        float bl = texture2D(tDiffuse, vUv + texel * vec2(-1,-1)).r;
+        float t  = texture2D(tDiffuse, vUv + texel * vec2( 0, 1)).r;
+        float b  = texture2D(tDiffuse, vUv + texel * vec2( 0,-1)).r;
+        float tr = texture2D(tDiffuse, vUv + texel * vec2( 1, 1)).r;
+        float r  = texture2D(tDiffuse, vUv + texel * vec2( 1, 0)).r;
+        float br = texture2D(tDiffuse, vUv + texel * vec2( 1,-1)).r;
+        
+        float x = (tl + 2.0*l + bl) - (tr + 2.0*r + br);
+        float y = (tl + 2.0*t + tr) - (bl + 2.0*b + br);
+        float edge = sqrt(x*x + y*y);
+        
+        vec3 blue = vec3(0.0, 0.3, 0.6);
+        vec3 white = vec3(1.0, 1.0, 1.0);
+        vec3 base = mix(blue, white, edge);
+
+        // Add Film Grain & Scanlines
+        float noise = (rand(vUv + time) - 0.5) * 0.12;
+        float scanline = sin(vUv.y * 600.0) * 0.03;
+        
+        gl_FragColor = vec4(base + noise - scanline, texture2D(tDiffuse, vUv).a);
+    }
+`;
+
 /**
  * Application for rendering 3D models to static isometric images.
  */
@@ -706,6 +745,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         if (this.shaderMode === "blueprint") shader = BLUEPRINT_FRAGMENT_SHADER;
         if (this.shaderMode === "film") shader = FILM_FRAGMENT_SHADER;
         if (this.shaderMode === "vignette") shader = VIGNETTE_FRAGMENT_SHADER;
+        if (this.shaderMode === "blueprintfilm") shader = BLUEPRINT_FILM_FRAGMENT_SHADER;
         
         this.screenQuad.material.fragmentShader = shader;
         this.screenQuad.material.needsUpdate = true;
