@@ -19,7 +19,7 @@
   ],
   "esmodules": [
     "scripts/isometric-renderer.js",
-    "scripts/token-integration.js"
+    "scripts/token.js"
   ],
   "languages": [
     {

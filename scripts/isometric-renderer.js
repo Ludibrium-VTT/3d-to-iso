@@ -420,10 +420,11 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const cleanPath = decodeURIComponent(this.modelPath.split('?')[0]);
         const modelFile = cleanPath.split('/').pop();
         const lastDot = modelFile.lastIndexOf('.');
-        const baseName = lastDot > -1 ? modelFile.substring(0, lastDot) : modelFile;
+        let baseName = lastDot > -1 ? modelFile.substring(0, lastDot) : modelFile;
         
-        // Sanitize baseName and generate filename
-        const safeBaseName = baseName.replace(/[^a-z0-9_\-\.]/gi, '_');
+        // Light sanitization: only remove truly illegal characters for most file systems
+        // Preserve spaces, parentheses, etc. for a "perfect match" with the source
+        const safeBaseName = baseName.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim();
         const filename = `${safeBaseName}_${facing}.png`;
         const uploadDir = "isometric-renders";
         const file = new File([blob], filename, { type: "image/png" });

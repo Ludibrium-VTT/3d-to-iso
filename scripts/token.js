@@ -1,6 +1,13 @@
 /**
- * Handles integration with Foundry VTT Token/Actor configuration menus.
+ * Handles Token-related integration and event handling for the 3D to Isometric module.
+ * This includes:
+ * 1. Token Configuration sheet integration (tab and rendering).
+ * 2. Dynamic texture switching based on token rotation.
  */
+
+/* -------------------------------------------- */
+/*  Token Configuration Integration             */
+/* -------------------------------------------- */
 
 Hooks.once("ready", () => {
     // V13 ApplicationV2 based TokenConfig
@@ -60,4 +67,49 @@ Hooks.once("ready", () => {
             });
         }
     };
+});
+
+/* -------------------------------------------- */
+/*  Rotation-Based Image Switching              */
+/* -------------------------------------------- */
+
+Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
+    // Only proceed if rotation is being updated
+    if (update.rotation === undefined) return;
+
+    // Check if this token is managed by 3d-to-iso
+    const is3d = tokenDoc.getFlag("3d-to-iso", "enabled");
+    if (!is3d) return;
+
+    // Get current texture
+    let currentSrc = update.texture?.src || tokenDoc.texture.src;
+    if (!currentSrc) return;
+
+    // Determine the new facing based on rotation
+    const rotation = (update.rotation % 360 + 360) % 360; // Normalize 0-359
+    let facing = "NE";
+
+    // Mapping ranges (standard isometric offsets)
+    // NE: 0-90 (Center 45)
+    // SE: 90-180 (Center 135)
+    // SW: 180-270 (Center 225)
+    // NW: 270-360 (Center 315)
+    if (rotation >= 0 && rotation < 90) facing = "NE";
+    else if (rotation >= 90 && rotation < 180) facing = "SE";
+    else if (rotation >= 180 && rotation < 270) facing = "SW";
+    else if (rotation >= 270 && rotation < 360) facing = "NW";
+
+    // Use regex to find and replace the facing suffix
+    const regex = /_(NE|NW|SE|SW)(?=\.[^.]+$)/i;
+    
+    if (regex.test(currentSrc)) {
+        const newSrc = currentSrc.replace(regex, `_${facing}`);
+        
+        // If the path actually changed, update it in the pending update object
+        if (newSrc !== currentSrc) {
+            if (!update.texture) update.texture = {};
+            update.texture.src = newSrc;
+            console.log(`3d-to-iso | Switching texture for ${tokenDoc.name} to ${facing} (${rotation}°)`);
+        }
+    }
 });
