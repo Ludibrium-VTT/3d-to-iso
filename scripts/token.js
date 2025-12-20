@@ -40,7 +40,7 @@ Hooks.once("ready", () => {
         ConfigClass.prototype._preparePartContext = async function(partId, context, options) {
             if (partId === "isometricModel") {
                 const doc = this.document;
-                const actor = (doc instanceof Actor) ? doc : doc?.actor || doc?.parent;
+                const actor = this.actor || (doc?.documentName === "Actor" ? doc : doc?.actor || doc?.parent);
                 return {
                     ...context,
                     tab: context.tabs[partId],
@@ -64,7 +64,7 @@ Hooks.once("ready", () => {
                 btn.addEventListener("click", (event) => {
                     event.preventDefault();
                     const doc = this.document;
-                    const actor = (doc instanceof Actor) ? doc : doc?.actor || doc?.parent;
+                    const actor = this.actor || (doc?.documentName === "Actor" ? doc : doc?.actor || doc?.parent);
                     if (!actor) return ui.notifications.warn("No Actor associated with this token.");
                     
                     // Open our custom renderer with the actor and token targeted
