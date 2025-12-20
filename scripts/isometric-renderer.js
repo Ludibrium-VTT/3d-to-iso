@@ -9,6 +9,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.modelPath = "";
         this.facing = "NE";
         this.resolution = "1024";
+
+        // Per-facing adjustments
+        this.adjustments = {
+            NE: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
+            NW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
+            SE: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
+            SW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 }
+        };
         
         // Three.js instances
         this.scene = null;
@@ -16,6 +24,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.renderer = null;
         this.loader = null;
         this.currentModel = null;
+        this.baseCameraDistance = 20;
     }
 
     static DEFAULT_OPTIONS = {
@@ -28,8 +37,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             icon: "fas fa-cube"
         },
         position: {
-            width: 600,
-            height: 700
+            width: 650,
+            height: 900
         }
     };
 
@@ -42,18 +51,39 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     /* -------------------------------------------- */
 
     async _prepareContext(options) {
+        const adj = this.adjustments[this.facing];
         return {
             modelPath: this.modelPath,
             facing: this.facing,
-            resolution: this.resolution
+            resolution: this.resolution,
+            adj: adj,
+            displayValues: {
+                rx: adj.rx.toFixed(0),
+                ry: adj.ry.toFixed(0),
+                rz: adj.rz.toFixed(0),
+                zoom: adj.zoom.toFixed(1),
+                px: adj.px.toFixed(1),
+                py: adj.py.toFixed(1)
+            }
         };
     }
 
     /* -------------------------------------------- */
 
     _onRender(context, options) {
+        const container = this.element.querySelector("#three-container");
+        if (!container) return;
+
         if (!this.renderer) {
             this._initializeThreeJS();
+        } else {
+            // Re-attach existing renderer's canvas
+            container.appendChild(this.renderer.domElement);
+            // Resize to keep square within new container bounds
+            const size = Math.min(container.clientWidth, container.clientHeight) - 20;
+            this.renderer.setSize(size, size);
+            // Ensure model is still in scene (it should be)
+            this._updateCameraRotation();
         }
         this._attachEventListeners();
     }
@@ -67,17 +97,25 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Setup Scene
         this.scene = new THREE.Scene();
 
-        // Setup Camera (Orthographic)
-        const aspect = container.clientWidth / container.clientHeight;
+        // Setup Model Container
+        this.modelPivot = new THREE.Group();
+        this.modelWrapper = new THREE.Group();
+        this.modelPivot.add(this.modelWrapper);
+        this.scene.add(this.modelPivot);
+
+        // Setup Camera (Orthographic) - ALWAYS SQUARE for 1:1 render output
         const d = 5;
-        this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+        this.camera = new THREE.OrthographicCamera(-d, d, d, -d, 0.1, 1000);
         this._updateCameraRotation();
         this.scene.add(this.camera);
 
         // Setup Renderer
-        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.setSize(container.clientWidth, container.clientHeight);
+        
+        // Size canvas to the smallest dimension of the container to keep it square
+        const size = Math.min(container.clientWidth, container.clientHeight) - 20; // 20px padding
+        this.renderer.setSize(size, size);
         container.appendChild(this.renderer.domElement);
 
         // Setup Lighting
@@ -94,7 +132,10 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         dracoLoader.setDecoderPath("modules/3d-to-iso/vendor/draco/");
         this.loader.setDRACOLoader(dracoLoader);
 
-        // Start Animation Loop (Preview Only)
+        // Initial render trigger
+        if (this.modelPath) this._loadModel(this.modelPath);
+        
+        // Start Animation Loop
         this._animate();
     }
 
@@ -109,31 +150,57 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     /* -------------------------------------------- */
 
     _updateCameraRotation() {
-        // Isometric Angles
-        const xRotation = Math.atan(1 / Math.sqrt(2));
-        let yRotation = 0;
+        if (!this.camera) return;
+
+        const adj = this.adjustments[this.facing];
+
+        // Base Isometric Angles
+        const baseXR = -Math.atan(1 / Math.sqrt(2));
+        let baseYR = 0;
 
         switch (this.facing) {
-            case "NE": yRotation = Math.PI * 0.25; break; // 45 deg
-            case "NW": yRotation = Math.PI * 0.75; break; // 135 deg
-            case "SW": yRotation = Math.PI * 1.25; break; // 225 deg (-135)
-            case "SE": yRotation = Math.PI * 1.75; break; // 315 deg (-45)
+            case "NE": baseYR = Math.PI * 0.25; break;
+            case "NW": baseYR = Math.PI * 0.75; break;
+            case "SW": baseYR = Math.PI * 1.25; break;
+            case "SE": baseYR = Math.PI * 1.75; break;
         }
 
-        // We rotate the camera object or the scene group? 
-        // Best to position camera on a sphere and look at origin.
-        const distance = 20;
-        this.camera.position.x = distance * Math.sin(yRotation) * Math.cos(xRotation);
-        this.camera.position.y = distance * Math.sin(xRotation);
-        this.camera.position.z = distance * Math.cos(yRotation) * Math.cos(xRotation);
-        this.camera.lookAt(0, 0, 0);
+        // Apply Manual Offsets
+        const finalXR = baseXR - (adj.rx * Math.PI / 180);
+        const finalYR = baseYR + (adj.ry * Math.PI / 180);
+        const finalZR = adj.rz * Math.PI / 180;
+        
+        // Setup camera position and orientation
+        const euler = new THREE.Euler(finalXR, finalYR, finalZR, 'YXZ');
+        this.camera.position.set(0, 0, this.baseCameraDistance);
+        this.camera.position.applyEuler(euler);
+        this.camera.quaternion.setFromEuler(euler);
+
+        // Explicitly set Orthographic zoom
+        this.camera.zoom = adj.zoom;
+        this.camera.updateProjectionMatrix();
+
+        // Apply Panning to the Model Pivot (Screen-Space Pan)
+        if (this.modelPivot) {
+            // Reset position
+            this.modelPivot.position.set(0, 0, 0);
+            
+            // Calculate screen-space axes based on camera orientation
+            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+            const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+            
+            // Move model along those axes
+            // Sensitivity adjustment: roughly match mouse pixel deltas to world units
+            this.modelPivot.position.addScaledVector(right, adj.px);
+            this.modelPivot.position.addScaledVector(up, adj.py);
+        }
     }
 
     /* -------------------------------------------- */
 
     async _loadModel(path) {
         if (!path) return;
-        if (this.currentModel) this.scene.remove(this.currentModel);
+        this.modelWrapper.clear();
 
         try {
             const gltf = await new Promise((resolve, reject) => {
@@ -141,23 +208,28 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             });
 
             this.currentModel = gltf.scene;
-            this.scene.add(this.currentModel);
+            this.modelWrapper.add(this.currentModel);
 
-            // Center and Scale
+            // Compute precise bounding box
             const box = new THREE.Box3().setFromObject(this.currentModel);
-            const size = box.getSize(new THREE.Vector3());
-            const center = box.getCenter(new THREE.Vector3());
+            const center = new THREE.Vector3();
+            const size = new THREE.Vector3();
+            box.getCenter(center);
+            box.getSize(size);
 
-            this.currentModel.position.x += (this.currentModel.position.x - center.x);
-            this.currentModel.position.y += (this.currentModel.position.y - center.y);
-            this.currentModel.position.z += (this.currentModel.position.z - center.z);
+            // Center the model's geometry by offsetting it within the wrapper
+            this.currentModel.position.set(-center.x, -center.y, -center.z);
 
-            // Auto-scale to fit
+            // Auto-scale modelWrapper to fit comfortably in ortho view
             const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 5 / maxDim; // Fit within the 'd=5' orthographic bounds
-            this.currentModel.scale.setScalar(scale);
+            const scale = (maxDim > 0) ? 6 / maxDim : 1; 
+            this.modelWrapper.scale.setScalar(scale);
+
+            // Force immediate update
+            this._updateCameraRotation();
 
         } catch (err) {
+            console.error(err);
             ui.notifications.error(`Failed to load model: ${err.message}`);
         }
     }
@@ -166,46 +238,127 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     _attachEventListeners() {
         const html = this.element;
+        const container = html.querySelector("#three-container");
         
+        // Mouse Interaction for Panning (Right Click Drag)
+        let isDragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+
+        container.addEventListener("contextmenu", (e) => e.preventDefault()); // Prevent actual context menu
+
+        container.addEventListener("mousedown", (e) => {
+            if (e.button === 2) { // Right Click
+                isDragging = true;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            if (!isDragging) return;
+            
+            const dx = e.clientX - lastMouseX;
+            const dy = e.clientY - lastMouseY;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+
+            // Update state (sensitivity tuning: / 50)
+            const adj = this.adjustments[this.facing];
+            adj.px += dx / 50;
+            adj.py -= dy / 50; // Invert Y for screen-to-world mapping
+
+            this._updateCameraRotation();
+        });
+
+        window.addEventListener("mouseup", () => {
+            isDragging = false;
+        });
+
         // Input changes
         html.querySelectorAll("input, select").forEach(el => {
             el.addEventListener("change", async (event) => {
                 const name = event.target.name;
                 const value = event.target.value;
-                this[name] = value;
-
-                if (name === "modelPath") {
-                    await this._loadModel(value);
-                } else if (name === "facing") {
+                
+                if (["rx", "ry", "rz", "zoom"].includes(name)) {
+                    this.adjustments[this.facing][name] = parseFloat(value);
                     this._updateCameraRotation();
+                    // Update label in UI
+                    this._updateLabel(el, name, value);
+                } else {
+                    this[name] = value;
+                    if (name === "modelPath") await this._loadModel(value);
+                    if (name === "facing") {
+                        this.render(); // Re-render Application to update sliders
+                    }
                 }
             });
+
+            // Live preview for sliders
+            if (el.type === "range") {
+                el.addEventListener("input", (event) => {
+                    const name = event.target.name;
+                    const value = event.target.value;
+                    this.adjustments[this.facing][name] = parseFloat(value);
+                    this._updateCameraRotation();
+                    this._updateLabel(el, name, value);
+                });
+            }
         });
 
         // File Picker
         html.querySelector(".file-picker").addEventListener("click", (event) => {
-            const fp = new FilePicker({
-                type: "model", // Custom type or just generic? GLB/GLTF
+            new FilePicker({
+                type: "model",
                 callback: async (path) => {
                     this.modelPath = path;
                     html.querySelector('input[name="modelPath"]').value = path;
                     await this._loadModel(path);
                 }
-            });
-            fp.browse();
+            }).browse();
         });
 
-        // Render Button
+        // Buttons
         html.querySelector(".render-btn").addEventListener("click", () => this._onRenderAndSave());
+        html.querySelector(".render-all-btn").addEventListener("click", () => this._onRenderAll());
+        html.querySelector(".reset-current-btn").addEventListener("click", () => {
+            this.adjustments[this.facing] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
+            this._updateCameraRotation();
+            this.render();
+        });
+        html.querySelector(".reset-all-btn").addEventListener("click", () => {
+            for (let f in this.adjustments) {
+                this.adjustments[f] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
+            }
+            this._updateCameraRotation();
+            this.render();
+        });
     }
 
     /* -------------------------------------------- */
 
-    async _onRenderAndSave() {
+    _updateLabel(el, name, value) {
+        const label = el.closest(".form-group").querySelector("label");
+        let text = "";
+        switch (name) {
+            case "zoom": text = `${game.i18n.localize("3D_TO_ISO.Zoom")} (${parseFloat(value).toFixed(1)}x)`; break;
+            default: text = `${game.i18n.localize("3D_TO_ISO.Rotation" + name.toUpperCase().slice(-1))} (${parseFloat(value).toFixed(0)}°)`; break;
+        }
+        label.textContent = text;
+    }
+
+    /* -------------------------------------------- */
+
+    async _onRenderAndSave(facing = this.facing) {
         if (!this.currentModel) {
             ui.notifications.warn("No model loaded to render.");
             return;
         }
+
+        const prevFacing = this.facing;
+        this.facing = facing;
+        this._updateCameraRotation();
 
         const targetRes = parseInt(this.resolution);
         const originalWidth = this.renderer.domElement.width;
@@ -218,23 +371,40 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Extract PNG
         const blob = await new Promise(resolve => this.renderer.domElement.toBlob(resolve, 'image/png'));
         
-        // Restore renderer size
+        // Restore
         this.renderer.setSize(originalWidth, originalHeight, false);
+        this.facing = prevFacing;
+        this._updateCameraRotation();
 
-        // Prep file for upload
-        const filename = `render_${Date.now()}.png`;
+        // Save
+        const timestamp = Date.now();
+        const filename = `${this.modelPath.split('/').pop().split('.')[0]}_${facing}_${timestamp}.png`;
         const file = new File([blob], filename, { type: "image/png" });
         const path = "isometric-renders";
 
-        // Upload to Foundry
         try {
-            // Ensure folder exists (hackish check but FilePicker.upload handles some of this)
             await FilePicker.upload("data", path, file);
-            ui.notifications.info(`Saved render to ${path}/${filename}`);
+            ui.notifications.info(`Saved ${facing} render to ${path}/${filename}`);
+            return `${path}/${filename}`;
         } catch (err) {
-            // Possibly folder doesn't exist? Try to create or just error
             ui.notifications.error(`Upload failed: ${err.message}`);
         }
+    }
+
+    /* -------------------------------------------- */
+
+    async _onRenderAll() {
+        if (!this.currentModel) return ui.notifications.warn("No model loaded.");
+        
+        const facings = ["NE", "NW", "SE", "SW"];
+        ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: 0, total: 4 }));
+        
+        for (let i = 0; i < facings.length; i++) {
+            await this._onRenderAndSave(facings[i]);
+            ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: i + 1, total: 4 }));
+        }
+        
+        ui.notifications.info("Batch render complete.");
     }
 
     /* -------------------------------------------- */
@@ -244,9 +414,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this.renderer.dispose();
             this.renderer = null;
         }
-        // Dispose scene objects, geometries, materials...
-        if (this.currentModel) {
-            this.currentModel.traverse(child => {
+        if (this.modelWrapper) {
+            this.modelWrapper.traverse(child => {
                 if (child.isMesh) {
                     child.geometry.dispose();
                     child.material.dispose();

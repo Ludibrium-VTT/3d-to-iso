@@ -8,6 +8,16 @@
     "SE": "South East",
     "SW": "South West",
     "Resolution": "Output Resolution",
-    "RenderAndSave": "Render & Save PNG"
+    "RenderAndSave": "Render & Save PNG",
+    "RotationX": "Rotation X-Axis (Offset)",
+    "RotationY": "Rotation Y-Axis (Offset)",
+    "RotationZ": "Rotation Z-Axis (Offset)",
+    "Zoom": "Zoom Level",
+    "PanX": "Pan X-Axis",
+    "PanY": "Pan Y-Axis",
+    "ResetCurrent": "Reset Current Facing",
+    "ResetAll": "Reset All Facings",
+    "RenderAll": "Render All Facings",
+    "BatchProgress": "Rendering all facings... ({current}/{total})"
   }
 }
