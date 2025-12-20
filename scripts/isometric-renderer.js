@@ -401,6 +401,16 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             ui.notifications.error(`Failed to load model: ${err.message}`);
         }
     }
+    
+    /**
+     * Synchronize zoom across all facings
+     * @param {number} newZoom 
+     */
+    _syncZoom(newZoom) {
+        for (let f in this.adjustments) {
+            this.adjustments[f].zoom = newZoom;
+        }
+    }
 
     /* -------------------------------------------- */
 
@@ -451,7 +461,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             
             // Apply zoom with clamping (matching slider limits 0.1 to 5)
             const newZoom = Math.min(Math.max(adj.zoom * delta, 0.1), 5);
-            adj.zoom = newZoom;
+            this._syncZoom(newZoom);
 
             this._updateCameraRotation();
 
@@ -470,7 +480,10 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                 const value = event.target.value;
                 
                 if (["rx", "ry", "rz", "zoom"].includes(name)) {
-                    this.adjustments[this.facing][name] = parseFloat(value);
+                    const numValue = parseFloat(value);
+                    if (name === "zoom") this._syncZoom(numValue);
+                    else this.adjustments[this.facing][name] = numValue;
+
                     this._updateCameraRotation();
                     // Update label in UI
                     this._updateLabel(el, name, value);
@@ -495,7 +508,11 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                 el.addEventListener("input", (event) => {
                     const name = event.target.name;
                     const value = event.target.value;
-                    this.adjustments[this.facing][name] = parseFloat(value);
+                    const numValue = parseFloat(value);
+
+                    if (name === "zoom") this._syncZoom(numValue);
+                    else this.adjustments[this.facing][name] = numValue;
+
                     this._updateCameraRotation();
                     this._updateLabel(el, name, value);
                 });
@@ -524,7 +541,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
 
         html.querySelector(".reset-current-btn").addEventListener("click", () => {
-            this.adjustments[this.facing] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
+            const currentZoom = this.adjustments[this.facing].zoom;
+            this.adjustments[this.facing] = { rx: 0, ry: 0, rz: 0, zoom: currentZoom, px: 0, py: 0 };
             this._updateCameraRotation();
             this.render();
         });
