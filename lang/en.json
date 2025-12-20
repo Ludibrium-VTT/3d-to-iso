@@ -1,0 +1,13 @@
+{
+  "3D_TO_ISO": {
+    "ModelPath": "3D Model Path",
+    "Browse": "Browse Files",
+    "Facing": "Isometric Facing",
+    "NE": "North East",
+    "NW": "North West",
+    "SE": "South East",
+    "SW": "South West",
+    "Resolution": "Output Resolution",
+    "RenderAndSave": "Render & Save PNG"
+  }
+}

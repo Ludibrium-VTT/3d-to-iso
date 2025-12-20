@@ -1,0 +1,21 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Foundry VTT
+*.db
+*.lock
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Renders (optional: keep or exclude output)
+# isometric-renders/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.bak
