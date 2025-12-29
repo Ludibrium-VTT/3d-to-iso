@@ -16,6 +16,11 @@
                 <button type="button" class="file-picker" data-type="imagevideo" data-target="modelPath" title="{{localize "3D_TO_ISO.Browse"}}">
                     <i class="fas fa-file-import"></i>
                 </button>
+                {{#if hasTokenBrowser}}
+                <button type="button" class="browse-3d-btn" data-tooltip="Browse 3D Library" style="flex: 0; width: 32px; padding: 0;">
+                    <i class="fa-solid fa-cube"></i>
+                </button>
+                {{/if}}
             </div>
         </div>
 

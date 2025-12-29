@@ -80,6 +80,9 @@ const SKETCH_FRAGMENT_SHADER = `
  * Application for rendering 3D models to static isometric images.
  */
 export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2) {
+
+    static TokenBrowser = null;
+
     constructor(options = {}) {
         super(options);
         
@@ -207,6 +210,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             effects: this.effects,
             ambientIntensity: this.ambientIntensity,
             linkRotations: this.linkRotations,
+            hasTokenBrowser: !!IsometricRenderer.TokenBrowser,
             adj: adj,
             actor: this.actor, // Keep for backward compat within template if needed
             document: this.document, // Expose generic document
@@ -847,6 +851,24 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this._updateCameraRotation();
             this.render();
         });
+
+        // Browse 3D Library Button
+        const browseBtn = html.querySelector(".browse-3d-btn");
+        if (browseBtn && IsometricRenderer.TokenBrowser) {
+             browseBtn.addEventListener("click", () => {
+                 const input = html.querySelector('input[name="modelPath"]');
+                 // Create a proxy input to trap the value set by TokenBrowser and trigger a change event
+                 const proxyInput = {
+                     get value() { return input.value; },
+                     set value(val) {
+                         input.value = val;
+                         input.dispatchEvent(new Event("change", { bubbles: true }));
+                     },
+                     closest: (sel) => input.closest(sel)
+                 };
+                 new IsometricRenderer.TokenBrowser(proxyInput, this).render(true);
+             });
+        }
     }
 
     /* -------------------------------------------- */
@@ -1195,4 +1217,23 @@ Hooks.once("init", () => {
         open: () => new IsometricRenderer().render(true),
         IsometricRenderer: IsometricRenderer
     };
+});
+
+Hooks.on("3DCanvasMapmakingPackRegisterTokenPacks", (tokenBrowser) => {
+    IsometricRenderer.TokenBrowser = tokenBrowser;
+});
+
+Hooks.once("ready", () => {
+    // If Levels 3D Preview is not active, we need to manually trigger the hook
+    // to initialize canvas3dcompendium and get the TokenBrowser.
+    const canvas3D = game.modules.get("levels-3d-preview");
+    const compendium = game.modules.get("canvas3dcompendium");
+
+    if (!IsometricRenderer.TokenBrowser && compendium?.active && !canvas3D?.active) {
+        const config = { UI: {} };
+        Hooks.callAll("3DCanvasConfig", config);
+        if (config.UI.TokenBrowser) {
+            IsometricRenderer.TokenBrowser = config.UI.TokenBrowser;
+        }
+    }
 });
