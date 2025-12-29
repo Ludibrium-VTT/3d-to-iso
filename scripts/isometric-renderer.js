@@ -1265,6 +1265,13 @@ Hooks.once("ready", () => {
     const canvas3D = game.modules.get("levels-3d-preview");
     const compendium = game.modules.get("canvas3dcompendium");
 
+    if (compendium?.active && !canvas3D?.active) {
+         if (game.settings.get("canvas3dcompendium", "autoApply")) {
+             console.warn("3D-to-ISO: Disabling 'autoApply' in canvas3dcompendium because levels-3d-preview is not active to prevent flag errors.");
+             game.settings.set("canvas3dcompendium", "autoApply", false);
+         }
+    }
+
     if ((!IsometricRenderer.TokenBrowser || !IsometricRenderer.AssetBrowser) && compendium?.active && !canvas3D?.active) {
         const config = { UI: {} };
         Hooks.callAll("3DCanvasConfig", config);
