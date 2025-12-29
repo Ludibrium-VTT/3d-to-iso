@@ -939,7 +939,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const file = new File([blob], filename, { type: "image/webp" });
 
         try {
-            const response = await FilePicker.upload("data", uploadDir, file);
+            const response = await FilePicker.upload("data", uploadDir, file, {}, { notify: false });
             const actualPath = typeof response === "string" ? response : response.path;
             
             return actualPath;
