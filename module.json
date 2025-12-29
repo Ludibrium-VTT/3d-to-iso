@@ -1,11 +1,11 @@
 {
   "id": "3d-to-iso",
-  "title": "Isometric 3D Model Renderer",
+  "title": "3D to Isometric",
   "description": "A one-off 3D to static isometric image rendering tool for Foundry VTT.",
   "version": "1.0.0",
   "authors": [
     {
-      "name": "Antigravity"
+      "name": "JoshBrodieNZ"
     }
   ],
   "compatibility": {
@@ -18,8 +18,11 @@
     "vendor/DRACOLoader.js"
   ],
   "esmodules": [
+    "scripts/utils.js",
     "scripts/isometric-renderer.js",
-    "scripts/token.js"
+    "scripts/token.js",
+    "scripts/tile.js",
+    "scripts/settings.js"
   ],
   "languages": [
     {

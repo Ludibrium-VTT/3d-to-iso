@@ -1,22 +1,50 @@
 <div class="tab {{tab.cssClass}}" data-tab="isometricModel" data-group="sheet">
     <fieldset>
         <legend><i class="fas fa-cube"></i> {{localize "3D_TO_ISO.Set3DModel"}}</legend>
-        <div class="form-group">
+        <div class="form-group isometric-config-group">
             <label>{{localize "3D_TO_ISO.Enable3D"}}</label>
             <div class="form-fields">
                 <input type="checkbox" name="flags.3d-to-iso.enabled" {{checked isometric.enabled}}>
             </div>
-            <p class="notes">{{localize "3D_TO_ISO.Enable3DNotes"}}</p>
         </div>
+        <p class="notes">{{localize "3D_TO_ISO.Enable3DNotes"}}</p>
 
         <div class="form-group">
                 <button type="button" class="open-3d-renderer">
                     <i class="fas fa-camera"></i> {{localize "3D_TO_ISO.OpenRenderer"}}
                 </button>
+                <button type="button" class="select-token-image" style="margin-top: 5px;">
+                    <i class="fas fa-file-image"></i> {{localize "3D_TO_ISO.SelectTokenImage"}}
+                </button>
             </div>
-            {{#if isometric.modelPath}}
-            <p class="notes"><strong>{{localize "3D_TO_ISO.CurrentModel"}}:</strong> {{isometric.modelPath}}</p>
+            {{#if isometric.isUnsaved}}
+            <p class="notes warning" style="color: var(--color-text-error); margin-top: 5px;">
+                <i class="fas fa-exclamation-triangle"></i> {{localize "3D_TO_ISO.UnsavedWarning"}}
+            </p>
             {{/if}}
-        </div>
+            {{#if isometric.modelPath}}
+            <p class="notes" style="overflow-wrap: anywhere;"><strong>{{localize "3D_TO_ISO.CurrentModel"}}:</strong> {{isometric.modelPath}}</p>
+            {{/if}}
+
+            {{#if isometric.gallery}}
+            <hr>
+            <div class="form-group">
+                <label>
+                    {{localize "3D_TO_ISO.GeneratedGallery"}}
+                    <button type="button" class="refresh-facings" style="width: auto; margin-left: auto; font-size: 0.7rem; padding: 0 5px; line-height: 1.5;">
+                        <i class="fas fa-sync"></i> {{localize "3D_TO_ISO.RefreshFacings"}}
+                    </button>
+                </label>
+                <div class="isometric-gallery">
+                    {{#each isometric.gallery}}
+                        <div class="gallery-item" title="{{this.direction}}">
+                            <img src="{{this.src}}" alt="{{this.direction}}">
+                            <span class="direction-label">{{this.direction}}</span>
+                        </div>
+                    {{/each}}
+                </div>
+            </div>
+            {{/if}}
+
     </fieldset>
 </div>

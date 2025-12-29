@@ -14,17 +14,49 @@
             </div>
         </div>
 
-        {{#if actor}}
+        <div class="form-group">
+            <label>{{localize "3D_TO_ISO.OutputPrefix"}}</label>
+            <div class="form-fields">
+                <input type="text" name="outputPrefix" value="{{outputPrefix}}" placeholder="{{localize '3D_TO_ISO.OutputPrefixPlaceholder'}}">
+            </div>
+        </div>
+
+        {{#if (or actor document)}}
         <div class="form-group target-actor">
-            <label>{{localize "3D_TO_ISO.TargetActor" name=actor.name}}</label>
+            <label>{{localize "3D_TO_ISO.TargetActor" name=(or actor.name document.name "Target")}}</label>
             <div class="form-fields">
                 <button type="button" class="assign-actor-btn primary" title="{{localize '3D_TO_ISO.AssignToActor'}}">
-                    <i class="fas fa-user-check"></i> {{localize "3D_TO_ISO.AssignToActor"}}
+                    <i class="fas fa-check"></i> {{localize "3D_TO_ISO.ProcessAndAssign"}}
                 </button>
             </div>
         </div>
         {{/if}}
 
+        <div class="form-group">
+            <label>{{localize "3D_TO_ISO.RenderMode"}}</label>
+            <div class="form-fields">
+                <select name="renderMode">
+                    <option value="cardinal" {{#if (eq renderMode "cardinal")}}selected{{/if}}>{{localize "3D_TO_ISO.ModeCardinal"}}</option>
+                    <option value="numeric" {{#if (eq renderMode "numeric")}}selected{{/if}}>{{localize "3D_TO_ISO.ModeNumeric"}}</option>
+                </select>
+            </div>
+        </div>
+
+        {{#if (eq renderMode "numeric")}}
+        <div class="form-group">
+            <label>{{localize "3D_TO_ISO.FrameCount"}}</label>
+            <div class="form-fields">
+                <input type="number" name="frameCount" value="{{frameCount}}" min="1" max="64" step="1">
+                <p class="notes" style="flex-basis: 100%; margin-top: 5px;">{{localize "3D_TO_ISO.FrameCountNotes"}}</p>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>{{localize "3D_TO_ISO.PreviewFrame"}}</label>
+            <div class="form-fields">
+                <input type="number" name="currentFrame" value="{{currentFrame}}" min="0" max="{{frameCount}}" step="1">
+            </div>
+        </div>
+        {{else}}
         <div class="form-group">
             <label>{{localize "3D_TO_ISO.Facing"}}</label>
             <div class="form-fields facings">
@@ -38,15 +70,25 @@
                 <label><input type="radio" name="facing" value="NW" {{#if (eq facing "NW")}}checked{{/if}}> {{localize "3D_TO_ISO.NW"}}</label>
             </div>
         </div>
+        {{/if}}
 
         <div class="form-group">
             <label>{{localize "3D_TO_ISO.Resolution"}}</label>
             <div class="form-fields">
                 <select name="resolution">
+                    <option value="256" {{#if (eq resolution "256")}}selected{{/if}}>256x256</option>
                     <option value="512" {{#if (eq resolution "512")}}selected{{/if}}>512x512</option>
                     <option value="1024" {{#if (eq resolution "1024")}}selected{{/if}}>1024x1024</option>
                     <option value="2048" {{#if (eq resolution "2048")}}selected{{/if}}>2048x2048</option>
                 </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Ambient Light</label>
+            <div class="form-fields">
+                <input type="range" name="ambientIntensity" value="{{ambientIntensity}}" min="0" max="2" step="0.05">
+                <span class="range-value display-ambientIntensity">{{ambientIntensity}}</span>
             </div>
         </div>
 
@@ -56,18 +98,30 @@
                 <select name="shaderMode">
                     <option value="none" {{#if (eq shaderMode "none")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderNone"}}</option>
                     <option value="sepia" {{#if (eq shaderMode "sepia")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderSepia"}}</option>
-                    <option value="dotscreen" {{#if (eq shaderMode "dotscreen")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderDotScreen"}}</option>
-                    <option value="rgbshift" {{#if (eq shaderMode "rgbshift")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderRGBShift"}}</option>
-                    <option value="blueprint" {{#if (eq shaderMode "blueprint")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderBlueprint"}}</option>
-                    <option value="film" {{#if (eq shaderMode "film")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderFilm"}}</option>
-                    <option value="vignette" {{#if (eq shaderMode "vignette")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderVignette"}}</option>
-                    <option value="blueprintfilm" {{#if (eq shaderMode "blueprintfilm")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderBlueprintFilm"}}</option>
+                    <option value="pixel" {{#if (eq shaderMode "pixel")}}selected{{/if}}>Pixel</option>
+                    <option value="sketch" {{#if (eq shaderMode "sketch")}}selected{{/if}}>Sketch</option>
                 </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Intensity</label>
+                <div class="form-fields">
+                    <input type="range" name="shaderIntensity" value="{{shaderIntensity}}" min="0" max="1" step="0.05">
+                    <span class="range-value display-shaderIntensity">{{shaderIntensity}}</span>
+                </div>
             </div>
             <p class="notes">{{localize "3D_TO_ISO.ShaderNote"}}</p>
         </div>
 
         <hr>
+
+        <div class="form-group">
+            <label>{{localize "3D_TO_ISO.LinkRotations"}}</label>
+            <div class="form-fields">
+                <input type="checkbox" name="linkRotations" {{checked linkRotations}}>
+                <span class="notes">{{localize "3D_TO_ISO.LinkRotationsHint"}}</span>
+            </div>
+        </div>
 
         <div class="form-group">
             <label>{{localize "3D_TO_ISO.RotationX"}} ({{displayValues.rx}}°)</label>

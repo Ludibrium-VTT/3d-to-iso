@@ -1,3 +1,4 @@
+import { TransformControls } from "../vendor/TransformControls.js";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 /* -------------------------------------------- */
@@ -18,58 +19,43 @@ const POST_VERTEX_SHADER = `
 
 const SEPIA_FRAGMENT_SHADER = `
     uniform sampler2D tDiffuse;
+    uniform float intensity;
     varying vec2 vUv;
     void main() {
         vec4 color = texture2D(tDiffuse, vUv);
         vec3 c = color.rgb;
-        gl_FragColor.r = dot(c, vec3(0.393, 0.769, 0.189));
-        gl_FragColor.g = dot(c, vec3(0.349, 0.686, 0.168));
-        gl_FragColor.b = dot(c, vec3(0.272, 0.534, 0.131));
-        gl_FragColor.a = color.a;
+        float r = dot(c, vec3(0.393, 0.769, 0.189));
+        float g = dot(c, vec3(0.349, 0.686, 0.168));
+        float b = dot(c, vec3(0.272, 0.534, 0.131));
+        vec3 sepia = vec3(r, g, b);
+        gl_FragColor = vec4(mix(c, sepia, intensity), color.a);
     }
 `;
 
-const DOTSCREEN_FRAGMENT_SHADER = `
+const PIXEL_FRAGMENT_SHADER = `
     uniform sampler2D tDiffuse;
     uniform vec2 resolution;
+    uniform float intensity;
     varying vec2 vUv;
-    float pattern() {
-        float angle = 1.05;
-        float scale = 1.0;
-        float s = sin(angle), c = cos(angle);
-        vec2 tex = vUv * resolution - (resolution * 0.5);
-        vec2 point = vec2(c * tex.x - s * tex.y, s * tex.x + c * tex.y) * scale;
-        return (sin(point.x) * sin(point.y)) * 4.0;
-    }
     void main() {
-        vec4 color = texture2D(tDiffuse, vUv);
-        float average = (color.r + color.g + color.b) / 3.0;
-        gl_FragColor = vec4(vec3(average * 10.0 - 5.0 + pattern()), color.a);
+        if (intensity <= 0.01) {
+            gl_FragColor = texture2D(tDiffuse, vUv);
+        } else {
+            float factor = mix(1.0, 32.0, intensity);
+            vec2 pixels = resolution / factor;
+            vec2 coord = floor(vUv * pixels) / pixels;
+            gl_FragColor = texture2D(tDiffuse, coord);
+        }
     }
 `;
 
-const RGBSHIFT_FRAGMENT_SHADER = `
-    uniform sampler2D tDiffuse;
-    varying vec2 vUv;
-    void main() {
-        float amount = 0.005;
-        float angle = 0.0;
-        vec2 offset = amount * vec2(cos(angle), sin(angle));
-        vec4 cr = texture2D(tDiffuse, vUv + offset);
-        vec4 cga = texture2D(tDiffuse, vUv);
-        vec4 cb = texture2D(tDiffuse, vUv - offset);
-        gl_FragColor = vec4(cr.r, cga.g, cb.b, cga.a);
-    }
-`;
-
-const BLUEPRINT_FRAGMENT_SHADER = `
+const SKETCH_FRAGMENT_SHADER = `
     uniform sampler2D tDiffuse;
     uniform vec2 resolution;
+    uniform float intensity;
     varying vec2 vUv;
     void main() {
         vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
-        
-        // Simple Sobel-like edge detection
         float tl = texture2D(tDiffuse, vUv + texel * vec2(-1, 1)).r;
         float l  = texture2D(tDiffuse, vUv + texel * vec2(-1, 0)).r;
         float bl = texture2D(tDiffuse, vUv + texel * vec2(-1,-1)).r;
@@ -78,81 +64,15 @@ const BLUEPRINT_FRAGMENT_SHADER = `
         float tr = texture2D(tDiffuse, vUv + texel * vec2( 1, 1)).r;
         float r  = texture2D(tDiffuse, vUv + texel * vec2( 1, 0)).r;
         float br = texture2D(tDiffuse, vUv + texel * vec2( 1,-1)).r;
-        
         float x = (tl + 2.0*l + bl) - (tr + 2.0*r + br);
         float y = (tl + 2.0*t + tr) - (bl + 2.0*b + br);
         float edge = sqrt(x*x + y*y);
         
-        vec3 blue = vec3(0.0, 0.3, 0.6);
-        vec3 white = vec3(1.0, 1.0, 1.0);
-        gl_FragColor = vec4(mix(blue, white, edge), texture2D(tDiffuse, vUv).a);
-    }
-`;
-
-const FILM_FRAGMENT_SHADER = `
-    uniform sampler2D tDiffuse;
-    uniform float time;
-    varying vec2 vUv;
-    
-    float rand(vec2 co){
-        return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
-    }
-
-    void main() {
         vec4 color = texture2D(tDiffuse, vUv);
-        float noise = (rand(vUv + time) - 0.5) * 0.15;
-        float scanline = sin(vUv.y * 800.0) * 0.04;
-        gl_FragColor = vec4(color.rgb + noise - scanline, color.a);
-    }
-`;
-
-const VIGNETTE_FRAGMENT_SHADER = `
-    uniform sampler2D tDiffuse;
-    varying vec2 vUv;
-    void main() {
-        vec4 color = texture2D(tDiffuse, vUv);
-        float dist = distance(vUv, vec2(0.5, 0.5));
-        color.rgb *= smoothstep(0.8, 0.2, dist);
-        gl_FragColor = color;
-    }
-`;
-
-const BLUEPRINT_FILM_FRAGMENT_SHADER = `
-    uniform sampler2D tDiffuse;
-    uniform vec2 resolution;
-    uniform float time;
-    varying vec2 vUv;
-
-    float rand(vec2 co){
-        return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
-    }
-
-    void main() {
-        vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
-        
-        // Edge detection
-        float tl = texture2D(tDiffuse, vUv + texel * vec2(-1, 1)).r;
-        float l  = texture2D(tDiffuse, vUv + texel * vec2(-1, 0)).r;
-        float bl = texture2D(tDiffuse, vUv + texel * vec2(-1,-1)).r;
-        float t  = texture2D(tDiffuse, vUv + texel * vec2( 0, 1)).r;
-        float b  = texture2D(tDiffuse, vUv + texel * vec2( 0,-1)).r;
-        float tr = texture2D(tDiffuse, vUv + texel * vec2( 1, 1)).r;
-        float r  = texture2D(tDiffuse, vUv + texel * vec2( 1, 0)).r;
-        float br = texture2D(tDiffuse, vUv + texel * vec2( 1,-1)).r;
-        
-        float x = (tl + 2.0*l + bl) - (tr + 2.0*r + br);
-        float y = (tl + 2.0*t + tr) - (bl + 2.0*b + br);
-        float edge = sqrt(x*x + y*y);
-        
-        vec3 blue = vec3(0.0, 0.3, 0.6);
-        vec3 white = vec3(1.0, 1.0, 1.0);
-        vec3 base = mix(blue, white, edge);
-
-        // Add Film Grain & Scanlines
-        float noise = (rand(vUv + time) - 0.5) * 0.12;
-        float scanline = sin(vUv.y * 600.0) * 0.03;
-        
-        gl_FragColor = vec4(base + noise - scanline, texture2D(tDiffuse, vUv).a);
+        float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        float sketch = clamp(1.0 - (edge * 4.0), 0.0, 1.0);
+        vec3 finalColor = vec3(gray * sketch);
+        gl_FragColor = vec4(mix(color.rgb, finalColor, intensity), color.a);
     }
 `;
 
@@ -163,17 +83,34 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     constructor(options = {}) {
         super(options);
         
-        // Target Actor and Token (if launched from a config sheet)
+        // Target Actor, Token, or Tile
         this.actor = options.actor || null;
         this.token = options.token || null;
+        this.tile = options.tile || null;
+
+        // Unified Document Accessor    
+        if (this.tile) {
+            this.document = this.tile;
+        } else if (this.token) {
+            this.document = this.token;
+        } else if (this.actor) {
+            this.document = this.actor;
+        }
 
         // Default settings
-        this.modelPath = this.actor?.getFlag("3d-to-iso", "modelPath") || "";
-        this.facing = "NE";
-        this.resolution = "1024";
+        this.modelPath = this.document?.getFlag("3d-to-iso", "modelPath") || "";
+        this.renderMode = "cardinal";
+        this.facing = "S";
+        this.frameCount = 16;
+        this.currentFrame = 0; // For numeric preview
+        // Default resolution: 256 for Tiles, 1024 for Tokens/Actors
+        this.resolution = (this.tile) ? "256" : "1024";
+        
+        // Lighting
+        this.ambientIntensity = this.document?.getFlag("3d-to-iso", "ambientIntensity") ?? 0.7;
         
         // Per-facing adjustments
-        const savedAdjustments = this.actor?.getFlag("3d-to-iso", "adjustments");
+        const savedAdjustments = this.document?.getFlag("3d-to-iso", "adjustments");
         this.adjustments = savedAdjustments || {
             N:  { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
             NE: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 },
@@ -185,6 +122,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             NW: { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 }
         };
         
+        // Adjustments/Overrides for Numeric Mode (Global or per frame?)
+        if (!this.adjustments.numeric) {
+            this.adjustments.numeric = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
+        }
+        
+        this.linkRotations = true; // Default to global rotation
+
         // Three.js instances
         this.scene = null;
         this.modelPivot = null;
@@ -227,14 +171,33 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     /* -------------------------------------------- */
 
     async _prepareContext(options) {
-        const adj = this.adjustments[this.facing];
+        // Resolve adjustment object based on mode
+        let adj = (this.renderMode === "numeric") 
+            ? this.adjustments.numeric 
+            : this.adjustments[this.facing];
+
+        // Safe fallback if the specific adjustment is missing (e.g. malformed saved data or switching modes)
+        if (!adj) {
+            adj = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
+            // Auto-repair internal state
+            if (this.renderMode === "numeric") this.adjustments.numeric = adj;
+            else this.adjustments[this.facing] = adj;
+        }
+
         return {
             modelPath: this.modelPath,
+            renderMode: this.renderMode,
             facing: this.facing,
+            frameCount: this.frameCount,
+            currentFrame: this.currentFrame,
             resolution: this.resolution,
             shaderMode: this.shaderMode,
+            shaderIntensity: (this.shaderIntensity !== undefined) ? this.shaderIntensity : 0.5,
+            ambientIntensity: this.ambientIntensity,
+            linkRotations: this.linkRotations,
             adj: adj,
-            actor: this.actor,
+            actor: this.actor, // Keep for backward compat within template if needed
+            document: this.document, // Expose generic document
             displayValues: {
                 rx: adj.rx.toFixed(0),
                 ry: adj.ry.toFixed(0),
@@ -293,6 +256,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Setup Renderer
         this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.autoClear = false;
         
         // Size canvas to the smallest dimension of the container to keep it square
         const size = Math.min(container.clientWidth, container.clientHeight) - 20; // 20px padding
@@ -300,13 +264,60 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         container.appendChild(this.renderer.domElement);
 
         // Setup Lighting
-        const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-        this.scene.add(ambient);
+        this.ambientLight = new THREE.AmbientLight(0xffffff, this.ambientIntensity);
+        this.scene.add(this.ambientLight);
 
         const directional = new THREE.DirectionalLight(0xffffff, 0.8);
         directional.position.set(5, 10, 7.5);
         this.scene.add(directional);
 
+        // Setup Scene (UI/Overlay)
+        this.overlayScene = new THREE.Scene();
+
+        // Setup Transform Controls (Add to Overlay Scene)
+        this.transformControl = new TransformControls(this.camera, this.renderer.domElement);
+        this.transformControl.setMode('rotate'); 
+        
+        // Sync TransformControls... (Include the syncing logic here - I need to keep it)
+        this.transformControl.addEventListener('change', (event) => {
+             if (this.modelWrapper && (this.transformControl.mode === "rotate")) {
+                 // Convert Radians to Degrees
+                 const rx = this.modelWrapper.rotation.x * (180 / Math.PI);
+                 const ry = this.modelWrapper.rotation.y * (180 / Math.PI);
+                 const rz = this.modelWrapper.rotation.z * (180 / Math.PI);
+                 
+                 if (this.linkRotations) {
+                     this._syncRotation("rx", rx);
+                     this._syncRotation("ry", ry);
+                     this._syncRotation("rz", rz);
+                 } else {
+                     const adj = (this.renderMode === "numeric") ? this.adjustments.numeric : this.adjustments[this.facing];
+                     if (adj) {
+                         adj.rx = rx;
+                         adj.ry = ry;
+                         adj.rz = rz;
+                     }
+                 }
+
+                 if (this.element) {
+                     const setVal = (name, val) => {
+                         const inputs = this.element.querySelectorAll(`input[name="${name}"]`);
+                         inputs.forEach(i => {
+                             i.value = val;
+                             this._updateLabel(i, name, val);
+                         });
+                     };
+                     setVal("rx", rx);
+                     setVal("ry", ry);
+                     setVal("rz", rz);
+                 }
+             }
+        });
+
+        this.overlayScene.add(this.transformControl);
+        this.transformControl.attach(this.modelWrapper);
+
+        
         // Setup Loader
         this.loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
@@ -314,7 +325,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.loader.setDRACOLoader(dracoLoader);
 
         // Initial render trigger
-        if (this.currentModel) this._loadModel(this.modelPath);
+        if (this.modelPath) this._loadModel(this.modelPath);
         
         this._setupPostProcessing(size);
         
@@ -324,22 +335,36 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
-    _drawThreeJSFrame() {
+    _drawThreeJSFrame(includeOverlay = true) {
         if (!this.renderer) return;
+        
+        // 1. Clear Screen
+        this.renderer.setRenderTarget(null);
+        this.renderer.clear();
+
+        // 2. Render Main Scene (Model)
         if (this.shaderMode === "none") {
-            this.renderer.setRenderTarget(null);
             this.renderer.render(this.scene, this.camera);
         } else {
+            // Render to RenderTarget
             this.renderer.setRenderTarget(this.renderTarget);
+            this.renderer.clear();
             this.renderer.render(this.scene, this.camera);
+            
+            // Render Post-Proc Quad to Screen
             this.renderer.setRenderTarget(null);
             
-            // Update time if needed
             if (this.screenQuad && this.screenQuad.material.uniforms.time) {
                 this.screenQuad.material.uniforms.time.value = performance.now() / 1000;
             }
             
             this.renderer.render(this.postScene, this.postCamera);
+        }
+
+        // 3. Render Overlay (Handles) - Always on Screen, No Shader
+        if (includeOverlay && this.overlayScene) {
+            this.renderer.clearDepth(); // Clear depth buffer so handles draw on top
+            this.renderer.render(this.overlayScene, this.camera);
         }
     }
 
@@ -351,33 +376,79 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
+    /* -------------------------------------------- */
+    /*  Camera Updates                              */
+    /* -------------------------------------------- */
+
     _updateCameraRotation() {
         if (!this.camera) return;
 
-        const adj = this.adjustments[this.facing];
+        // Resolve active adjustment set
+        let adj = (this.renderMode === "numeric") 
+            ? this.adjustments.numeric 
+            : this.adjustments[this.facing];
 
-        // Base Isometric Angles
-        const baseXR = -Math.atan(1 / Math.sqrt(2));
-        let baseYR = 0;
-
-        switch (this.facing) {
-            case "E":  baseYR = Math.PI * 0.00; break;
-            case "NE": baseYR = Math.PI * 0.25; break;
-            case "N":  baseYR = Math.PI * 0.50; break;
-            case "NW": baseYR = Math.PI * 0.75; break;
-            case "W":  baseYR = Math.PI * 1.00; break;
-            case "SW": baseYR = Math.PI * 1.25; break;
-            case "S":  baseYR = Math.PI * 1.50; break;
-            case "SE": baseYR = Math.PI * 1.75; break;
+        if (!adj) {
+             adj = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
         }
 
-        // Apply Manual Offsets
-        const finalXR = baseXR - (adj.rx * Math.PI / 180);
-        const finalYR = baseYR + (adj.ry * Math.PI / 180);
-        const finalZR = adj.rz * Math.PI / 180;
+        // Base Projection Angle
+        const projectionType = game.settings.get("3d-to-iso", "projectionType");
+        let baseXR;
+
+        if (projectionType === "dimetric") {
+            baseXR = -Math.PI / 6; 
+        } else {
+            // True Isometric (~35.264°)
+            baseXR = -Math.atan(1 / Math.sqrt(2));
+        }
         
-        // Setup camera position and orientation
-        const euler = new THREE.Euler(finalXR, finalYR, finalZR, 'YXZ');
+        // Ensure negative pitch for "looking down"
+        // baseXR is already negative in iso calc above.
+        
+        let baseYR = 0;
+
+        if (this.renderMode === "numeric") {
+            // Numeric Mode: 360 Degree Rotation
+            // Goal: Clockwise rotation.
+            // Frame 0 = South (Front).
+            
+            const step = (Math.PI * 2) / this.frameCount;
+            
+            // Start at South (aligned with Cardinal "S")
+            const southAngle = Math.PI * 1.75;
+            
+            // Frame 0 = South.
+            // Subsequent frames rotate Clockwise (Increasing Y angle matches Cardinal table S->SW->W).
+            baseYR = southAngle + (this.currentFrame * step);
+            
+        } else {
+            // Cardinal Mode            
+            switch (this.facing) {
+                case "SW": baseYR = Math.PI * 0.00; break;
+                case "W":  baseYR = Math.PI * 0.25; break;
+                case "NW": baseYR = Math.PI * 0.50; break; 
+                case "N":  baseYR = Math.PI * 0.75; break; 
+                case "NE": baseYR = Math.PI * 1.00; break;
+                case "E":  baseYR = Math.PI * 1.25; break;
+                case "SE": baseYR = Math.PI * 1.50; break;
+                case "S":  baseYR = Math.PI * 1.75; break;
+            }
+        }
+
+        // Apply Manual Offsets to MODEL, not Camera
+        if (this.modelWrapper) {
+            this.modelWrapper.rotation.set(
+                adj.rx * Math.PI / 180,
+                adj.ry * Math.PI / 180,
+                adj.rz * Math.PI / 180
+            );
+        }
+
+        // Setup camera position and orientation (Base Iso Only)
+        // const finalXR = baseXR - (adj.rx * Math.PI / 180); <-- Old Logic
+        
+        const euler = new THREE.Euler(baseXR, baseYR, 0, 'YXZ');
         this.camera.position.set(0, 0, this.baseCameraDistance);
         this.camera.position.applyEuler(euler);
         this.camera.quaternion.setFromEuler(euler);
@@ -396,7 +467,6 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
             
             // Move model along those axes
-            // Sensitivity adjustment: roughly match mouse pixel deltas to world units
             this.modelPivot.position.addScaledVector(right, adj.px);
             this.modelPivot.position.addScaledVector(up, adj.py);
         }
@@ -407,6 +477,9 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     async _loadModel(path) {
         if (!path) return;
         this.modelWrapper.clear();
+        this.modelWrapper.scale.set(1, 1, 1);
+        this.modelWrapper.rotation.set(0, 0, 0);
+        this.modelWrapper.position.set(0, 0, 0);
 
         try {
             const gltf = await new Promise((resolve, reject) => {
@@ -451,21 +524,39 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
     }
 
+    _syncRotation(prop, value) {
+        for (let f in this.adjustments) {
+            if (this.adjustments[f]) this.adjustments[f][prop] = value;
+        }
+    }
+
     /* -------------------------------------------- */
 
     _attachEventListeners() {
         const html = this.element;
         const container = html.querySelector("#three-container");
         
+        // Helper to get current adjustment object
+        const getAdj = () => (this.renderMode === "numeric") ? this.adjustments.numeric : this.adjustments[this.facing];
+
         // Mouse Interaction for Panning (Right Click Drag)
         let isDragging = false;
         let lastMouseX = 0;
         let lastMouseY = 0;
 
-        container.addEventListener("contextmenu", (e) => e.preventDefault()); // Prevent actual context menu
+        container.addEventListener("contextmenu", (e) => e.preventDefault()); 
+        
+        // Transform Controls Keybinds (Size only)
+        window.addEventListener("keydown", (e) => {
+            if (!this.transformControl) return;
+            switch(e.key.toLowerCase()) {
+                case "+": case "=": this.transformControl.setSize(this.transformControl.size + 0.1); break;
+                case "-": case "_": this.transformControl.setSize(Math.max(0.1, this.transformControl.size - 0.1)); break;
+            }
+        }); 
 
         container.addEventListener("mousedown", (e) => {
-            if (e.button === 2) { // Right Click
+            if (e.button === 2) { 
                 isDragging = true;
                 lastMouseX = e.clientX;
                 lastMouseY = e.clientY;
@@ -474,37 +565,31 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         window.addEventListener("mousemove", (e) => {
             if (!isDragging) return;
-            
             const dx = e.clientX - lastMouseX;
             const dy = e.clientY - lastMouseY;
             lastMouseX = e.clientX;
             lastMouseY = e.clientY;
 
-            // Update state (sensitivity tuning: / 50)
-            const adj = this.adjustments[this.facing];
+            const adj = getAdj();
             adj.px += dx / 50;
-            adj.py -= dy / 50; // Invert Y for screen-to-world mapping
-
+            adj.py -= dy / 50; 
             this._updateCameraRotation();
         });
 
-        window.addEventListener("mouseup", () => {
-            isDragging = false;
-        });
+        window.addEventListener("mouseup", () => isDragging = false);
 
         // Mouse Wheel for Zoom
         container.addEventListener("wheel", (e) => {
             e.preventDefault();
-            const adj = this.adjustments[this.facing];
-            const delta = e.deltaY > 0 ? 0.9 : 1.1; // Multiplicative zoom for smoother feel
-            
-            // Apply zoom with clamping (matching slider limits 0.1 to 5)
+            const adj = getAdj();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1; 
             const newZoom = Math.min(Math.max(adj.zoom * delta, 0.1), 5);
+            
+            // Sync all facings or just current?
+            // For now, sync all 
             this._syncZoom(newZoom);
-
             this._updateCameraRotation();
-
-            // Sync Slider and Label
+            
             const zoomInput = html.querySelector('input[name="zoom"]');
             if (zoomInput) {
                 zoomInput.value = adj.zoom;
@@ -516,27 +601,47 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         html.querySelectorAll("input, select").forEach(el => {
             el.addEventListener("change", async (event) => {
                 const name = event.target.name;
-                const value = event.target.value;
+                const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
                 
                 if (["rx", "ry", "rz", "zoom"].includes(name)) {
                     const numValue = parseFloat(value);
                     if (name === "zoom") this._syncZoom(numValue);
-                    else this.adjustments[this.facing][name] = numValue;
+                    else if (this.linkRotations && ["rx", "ry", "rz"].includes(name)) {
+                         this._syncRotation(name, numValue);
+                    }
+                    else getAdj()[name] = numValue;
 
                     this._updateCameraRotation();
-                    // Update label in UI
                     this._updateLabel(el, name, value);
+                } else if(name === "frameCount") {
+                    this.frameCount = parseInt(value);
+                    this.render(); // Re-render to update max frame input
+                } else if(name === "currentFrame") {
+                    this.currentFrame = parseInt(value);
+                    this._updateCameraRotation();
+                } else if(name === "renderMode") {
+                    this.renderMode = value;
+                    this.render(); // Toggle UI parts
+                } else if(name === "outputPrefix") {
+                    this.outputPrefix = value;
+                } else if(name === "linkRotations") {
+                    this.linkRotations = value;
+                    if (this.linkRotations) {
+                        // Sync current facing rotations to all others immediately
+                        const adj = getAdj();
+                        this._syncRotation("rx", adj.rx);
+                        this._syncRotation("ry", adj.ry);
+                        this._syncRotation("rz", adj.rz);
+                    }
                 } else {
                     this[name] = value;
                     if (name === "modelPath") await this._loadModel(value);
-                    if (name === "facing") {
-                        this.render(); // Re-render Application to update sliders
-                    }
+                    if (name === "facing") this.render();
                 }
             });
 
             if (el.name === "shaderMode") {
-                el.addEventListener("change", (event) => {
+                 el.addEventListener("change", (event) => {
                     this.shaderMode = event.target.value;
                     this._updatePostShader();
                 });
@@ -548,9 +653,31 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     const name = event.target.name;
                     const value = event.target.value;
                     const numValue = parseFloat(value);
+                    const adj = getAdj();
 
                     if (name === "zoom") this._syncZoom(numValue);
-                    else this.adjustments[this.facing][name] = numValue;
+                    else if (name === "shaderIntensity") {
+                        this.shaderIntensity = numValue;
+                        if (this.screenQuad && this.screenQuad.material.uniforms.intensity) {
+                             this.screenQuad.material.uniforms.intensity.value = numValue;
+                        }
+                        // Update label
+                        const display = el.parentElement.querySelector('.display-shaderIntensity');
+                        if (display) display.textContent = numValue;
+                        return; 
+                    }
+                    else if (name === "ambientIntensity") {
+                        this.ambientIntensity = numValue;
+                        if (this.ambientLight) this.ambientLight.intensity = numValue;
+                        
+                        const display = el.parentElement.querySelector('.display-ambientIntensity');
+                        if (display) display.textContent = numValue; // Using fixed label update logic here
+                        return;
+                    }
+                    else if (this.linkRotations && ["rx", "ry", "rz"].includes(name)) {
+                         this._syncRotation(name, numValue);
+                    }
+                    else adj[name] = numValue;
 
                     this._updateCameraRotation();
                     this._updateLabel(el, name, value);
@@ -558,9 +685,9 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             }
         });
 
-        // File Picker
-        html.querySelector(".file-picker").addEventListener("click", (event) => {
-            new FilePicker({
+        // ... File Picker, Buttons etc ...
+        html.querySelector(".file-picker").addEventListener("click", () => {
+             new FilePicker({
                 type: "model",
                 callback: async (path) => {
                     this.modelPath = path;
@@ -570,7 +697,6 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             }).browse();
         });
 
-        // Buttons
         html.querySelector(".render-btn").addEventListener("click", () => this._onRenderAndSave());
         html.querySelector(".render-all-btn").addEventListener("click", () => this._onRenderAll());
         
@@ -580,8 +706,10 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
 
         html.querySelector(".reset-current-btn").addEventListener("click", () => {
-            const currentZoom = this.adjustments[this.facing].zoom;
-            this.adjustments[this.facing] = { rx: 0, ry: 0, rz: 0, zoom: currentZoom, px: 0, py: 0 };
+            const adj = getAdj();
+            const currentZoom = adj.zoom;
+            // Reset values in place
+            adj.rx = 0; adj.ry = 0; adj.rz = 0; adj.px = 0; adj.py = 0; adj.zoom = currentZoom;
             this._updateCameraRotation();
             this.render();
         });
@@ -608,14 +736,34 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
-    async _onRenderAndSave(facing = this.facing) {
+    async _onRenderAndSave(target = null, notify = true) {
         if (!this.currentModel) {
             ui.notifications.warn("No model loaded to render.");
             return;
         }
 
         const prevFacing = this.facing;
-        this.facing = facing;
+        const prevFrame = this.currentFrame;
+
+        // Context Switching
+        let suffix = "";
+        let displayLabel = "";
+
+        if (this.renderMode === "numeric") {
+            const frame = (target !== null) ? parseInt(target) : this.currentFrame;
+            this.currentFrame = frame;
+            // Pad based on max count? standardizing on 3 digits is safest for sorting
+            const isTiny = this.frameCount < 10;
+            const pad = isTiny ? 1 : 3;
+            suffix = frame.toString().padStart(pad, '0'); 
+            displayLabel = `Frame ${frame}`;
+        } else {
+            const face = (target !== null) ? target : this.facing;
+            this.facing = face;
+            suffix = face;
+            displayLabel = face;
+        }
+
         this._updateCameraRotation();
 
         const targetRes = parseInt(this.resolution);
@@ -625,37 +773,50 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Resize renderer for high-res render
         this.renderer.setSize(targetRes, targetRes, false);
         this._setupPostProcessing(targetRes);
-        this._drawThreeJSFrame();
+        this._drawThreeJSFrame(false);
 
-        // Extract PNG
-        const blob = await new Promise(resolve => this.renderer.domElement.toBlob(resolve, 'image/png'));
+        // Extract WebP
+        // Using high quality (0.9) to ensure crisp pixel art or smooth gradients
+        const blob = await new Promise(resolve => this.renderer.domElement.toBlob(resolve, 'image/webp', 0.95));
         
         // Restore
         this.renderer.setSize(originalWidth, originalHeight, false);
         this.facing = prevFacing;
+        this.currentFrame = prevFrame;
         this._updateCameraRotation();
 
         // Robust filename extraction
-        const cleanPath = decodeURIComponent(this.modelPath.split('?')[0]);
-        const modelFile = cleanPath.split('/').pop();
-        const lastDot = modelFile.lastIndexOf('.');
-        let baseName = lastDot > -1 ? modelFile.substring(0, lastDot) : modelFile;
+        let baseName = "";
         
-        // Light sanitization: only remove truly illegal characters for most file systems
-        // Preserve spaces, parentheses, etc. for a "perfect match" with the source
+        if (this.outputPrefix && this.outputPrefix.trim().length > 0) {
+            baseName = this.outputPrefix.trim();
+        } else {
+            // Fallback to model name
+            const cleanPath = decodeURIComponent(this.modelPath.split('?')[0]);
+            const modelFile = cleanPath.split('/').pop();
+            const lastDot = modelFile.lastIndexOf('.');
+            baseName = lastDot > -1 ? modelFile.substring(0, lastDot) : modelFile;
+        }
+        
+        // Light sanitization
         const safeBaseName = baseName.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim();
-        const filename = `${safeBaseName}_${facing}.png`;
-        const uploadDir = "isometric-renders";
-        const file = new File([blob], filename, { type: "image/png" });
+        const filename = `${safeBaseName}_${suffix}.webp`;
+        
+        // Settings-based Path
+        // Check if we are operating on a tile or token/actor
+        const isTile = this.document?.documentName === "Tile";
+        const settingKey = isTile ? "tileSavePath" : "tokenSavePath";
+        const uploadDir = game.settings.get("3d-to-iso", settingKey) || "isometric-renders";
+        
+        const file = new File([blob], filename, { type: "image/webp" });
 
         try {
             const response = await FilePicker.upload("data", uploadDir, file);
             const actualPath = typeof response === "string" ? response : response.path;
             
-            ui.notifications.info(`Saved ${facing} render to ${actualPath}`);
             return actualPath;
         } catch (err) {
-            ui.notifications.error(`Upload failed: ${err.message}. Make sure the 'isometric-renders' directory exists.`);
+            ui.notifications.error(`Upload failed: ${err.message}. Make sure the target directory exists.`);
             return null;
         }
     }
@@ -665,55 +826,106 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     async _onRenderAll() {
         if (!this.currentModel) return ui.notifications.warn("No model loaded.");
         
-        const facings = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-        ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: 0, total: 8 }));
-        
-        const results = {};
-        for (let i = 0; i < facings.length; i++) {
-            const path = await this._onRenderAndSave(facings[i]);
-            results[facings[i]] = path;
-            ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: i + 1, total: 8 }));
+        let targets = [];
+        if (this.renderMode === "numeric") {
+            // Warning for high frame counts
+            if (this.frameCount > 36) {
+                const confirmed = await Dialog.confirm({
+                    title: game.i18n.localize("3D_TO_ISO.FrameCount"),
+                    content: `<p>${game.i18n.localize("3D_TO_ISO.HighFrameCountWarning")}</p>`
+                });
+                if (!confirmed) return;
+            }
+
+            // Generate range 0..count-1
+            targets = Array.from({length: this.frameCount}, (_, i) => i);
+        } else {
+            targets = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
         }
+
+        ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: 0, total: targets.length }));
         
-        ui.notifications.info("Batch render complete.");
+        const total = targets.length;
+      
+        let count = 0;
+        const results = {}; // Keep results for _onProcessAndAssign
+        for (const t of targets) {
+             // Pass notify=false to avoid spam
+             const path = await this._onRenderAndSave(t, false);
+             results[t] = path;
+             count++;
+             // Optional: progress bar could be implemented here
+        }
         return results;
     }
 
     /* -------------------------------------------- */
 
     async _onProcessAndAssign() {
-        if (!this.actor) return ui.notifications.warn("No target actor for this operation.");
+        if (!this.document) return ui.notifications.warn("No target document for this operation.");
         if (!this.modelPath) return ui.notifications.warn("No model selected.");
 
         // 1. Perform batch render
         const paths = await this._onRenderAll();
-        if (!paths || !paths.NE) return;
+        // Check if we got results. Result keys might be numbers or strings.
+        const keys = Object.keys(paths);
+        if (!paths || keys.length === 0) return;
 
-        // 2. Save settings to Actor flags (Base Prototype)
-        await this.actor.setFlag("3d-to-iso", "modelPath", this.modelPath);
-        await this.actor.setFlag("3d-to-iso", "adjustments", this.adjustments);
+        // 2. Save settings to Document flags (Tile, Token, or Actor)
+        await this.document.setFlag("3d-to-iso", "modelPath", this.modelPath);
+        await this.document.setFlag("3d-to-iso", "adjustments", this.adjustments);
+        await this.document.setFlag("3d-to-iso", "facingMode", this.renderMode); // Save Mode!
 
-        // 3. Update the available facings flag based on our batch render results
-        const directions = Object.keys(paths);
-        if (directions.length > 0) {
-            await this.actor.setFlag("3d-to-iso", "availableFacings", directions);
+        // 3. Update the available facings flag
+        if (keys.length > 0) {
+            // Re-derive suffixes from logic used in _onRenderAndSave
+            let storedFacings = [];
+            if (this.renderMode === "numeric") {
+                const isTiny = this.frameCount < 10;
+                const pad = isTiny ? 1 : 3;
+                storedFacings = keys.map(k => parseInt(k).toString().padStart(pad, '0'));
+            } else {
+                storedFacings = keys;
+            }
+            
+            await this.document.setFlag("3d-to-iso", "availableFacings", storedFacings);
         }
 
-        // 4. Update active token instance if we have one
-        if (this.token && this.token instanceof TokenDocument) {
-            await this.token.update({
-                "texture.src": paths.NE,
+        // Pick the "first" image to set as default.
+        let primaryKey = keys[0];
+        if (this.renderMode === "cardinal" && paths.NE) primaryKey = "NE";
+        if (this.renderMode === "numeric") primaryKey = keys[0]; // Frame 0
+
+        const primaryPath = paths[primaryKey];
+        const isTile = this.document.documentName === "Tile";
+
+        // 4. Update the document
+        if (isTile) {
+            await this.document.update({
+                _id: this.document.id,
+                "texture.src": primaryPath,
                 "flags.3d-to-iso.enabled": true
-            });
+            }, { from3DApp: true });
+        } else {
+            // Actor / Token Logic
+            // If we have a specific Token instance targeted
+            if (this.token && this.token instanceof TokenDocument) {
+                await this.token.update({
+                    "texture.src": primaryPath,
+                    "flags.3d-to-iso.enabled": true
+                }, { from3DApp: true });
+            }
+            
+            // If we have an Actor, update prototype (if it's an Actor document)
+            if (this.actor && this.actor.documentName === "Actor") {
+                await this.actor.update({
+                    "prototypeToken.texture.src": primaryPath,
+                    "prototypeToken.flags.3d-to-iso.enabled": true
+                });
+            }
         }
 
-        // 4. Update prototype token on the base actor
-        await this.actor.update({
-            "prototypeToken.texture.src": paths.NE,
-            "prototypeToken.flags.3d-to-iso.enabled": true
-        });
-
-        ui.notifications.info(`Successfully assigned 3D renders to ${this.actor.name}.`);
+        ui.notifications.info(`Successfully assigned 3D renders to ${this.document.name || this.document.id}.`);
         this.close();
     }
 
@@ -733,6 +945,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             uniforms: {
                 tDiffuse: { value: this.renderTarget.texture },
                 resolution: { value: new THREE.Vector2(size, size) },
+                intensity: { value: (this.shaderIntensity !== undefined) ? this.shaderIntensity : 0.5 },
                 time: { value: 0 }
             }
         });
@@ -746,12 +959,11 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         if (!this.screenQuad) return;
         
         let shader = SEPIA_FRAGMENT_SHADER;
-        if (this.shaderMode === "dotscreen") shader = DOTSCREEN_FRAGMENT_SHADER;
-        if (this.shaderMode === "rgbshift") shader = RGBSHIFT_FRAGMENT_SHADER;
-        if (this.shaderMode === "blueprint") shader = BLUEPRINT_FRAGMENT_SHADER;
-        if (this.shaderMode === "film") shader = FILM_FRAGMENT_SHADER;
-        if (this.shaderMode === "vignette") shader = VIGNETTE_FRAGMENT_SHADER;
-        if (this.shaderMode === "blueprintfilm") shader = BLUEPRINT_FILM_FRAGMENT_SHADER;
+        if (this.shaderMode === "technicolor") shader = TECHNICOLOR_FRAGMENT_SHADER;
+        if (this.shaderMode === "pixel") shader = PIXEL_FRAGMENT_SHADER;
+        if (this.shaderMode === "sketch") shader = SKETCH_FRAGMENT_SHADER;
+        if (this.shaderMode === "toon") shader = TOON_FRAGMENT_SHADER;
+        if (this.shaderMode === "glitch") shader = GLITCH_FRAGMENT_SHADER;
         
         this.screenQuad.material.fragmentShader = shader;
         this.screenQuad.material.needsUpdate = true;
@@ -763,6 +975,10 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         if (this.renderer) {
             this.renderer.dispose();
             this.renderer = null;
+        }
+        if (this.transformControl) {
+            this.transformControl.dispose();
+            this.transformControl = null;
         }
         if (this.modelWrapper) {
             this.modelWrapper.traverse(child => {
