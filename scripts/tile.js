@@ -110,20 +110,7 @@ Hooks.on("renderTileConfig", async (app, html, data) => {
         });
     }
 
-    // File Picker for Model Path
-    const filePickers = tabContent.querySelectorAll(".file-picker");
-    filePickers.forEach(btn => {
-        btn.addEventListener("click", ev => {
-            const input = btn.closest(".form-group").querySelector("input");
-            new FilePicker({
-                type: "model",
-                callback: (path) => {
-                    input.value = path;
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            }).browse();
-        });
-    });
+
     
     // Setup Facings (Atomic logic from token.js session)
     const selectImgBtn = tabContent.querySelector(".select-token-image");

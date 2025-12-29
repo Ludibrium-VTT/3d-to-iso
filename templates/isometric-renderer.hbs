@@ -13,7 +13,7 @@
             <label>{{localize "3D_TO_ISO.ModelPath"}}</label>
             <div class="form-fields" style="display: flex; flex-wrap: nowrap; align-items: center; gap: 5px;">
                 <input type="text" name="modelPath" value="{{modelPath}}" placeholder="path/to/model.glb">
-                <button type="button" class="file-picker" data-type="imagevideo" data-target="modelPath" title="{{localize "3D_TO_ISO.Browse"}}">
+                <button type="button" class="browse-model-btn" title="{{localize "3D_TO_ISO.Browse"}}">
                     <i class="fas fa-file-import"></i>
                 </button>
                 {{#if hasTokenBrowser}}

@@ -210,7 +210,9 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             effects: this.effects,
             ambientIntensity: this.ambientIntensity,
             linkRotations: this.linkRotations,
-            hasTokenBrowser: !!IsometricRenderer.TokenBrowser,
+            hasTokenBrowser: (this.document?.documentName === "Tile") 
+                ? (!!IsometricRenderer.AssetBrowser && game.modules.get("canvas3dcompendium")?.active)
+                : (!!IsometricRenderer.TokenBrowser && game.modules.get("canvas3dtokencompendium")?.active),
             adj: adj,
             actor: this.actor, // Keep for backward compat within template if needed
             document: this.document, // Expose generic document
@@ -817,16 +819,21 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         });
 
         // ... File Picker, Buttons etc ...
-        html.querySelector(".file-picker").addEventListener("click", () => {
-             new FilePicker({
-                type: "model",
-                callback: async (path) => {
-                    this.modelPath = path;
-                    html.querySelector('input[name="modelPath"]').value = path;
-                    await this._loadModel(path);
-                }
-            }).browse();
-        });
+        const browseModelBtn = html.querySelector(".browse-model-btn");
+        if (browseModelBtn) {
+            browseModelBtn.addEventListener("click", () => {
+                 const fp = new FilePicker({
+                    displayMode: "list",
+                    callback: async (path) => {
+                        this.modelPath = path;
+                        html.querySelector('input[name="modelPath"]').value = path;
+                        await this._loadModel(path);
+                    }
+                });
+                fp.extensions = [".glb", ".gltf"];
+                fp.render(true);
+            });
+        }
 
         html.querySelector(".render-btn").addEventListener("click", () => this._onRenderAndSave());
         html.querySelector(".render-all-btn").addEventListener("click", () => this._onRenderAll());
@@ -866,7 +873,32 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                      },
                      closest: (sel) => input.closest(sel)
                  };
-                 new IsometricRenderer.TokenBrowser(proxyInput, this).render(true);
+
+                 // Context Switching: Tile vs Token
+                 const isTile = this.document?.documentName === "Tile";
+                 let BrowserClass = IsometricRenderer.TokenBrowser;
+
+                 if (isTile && IsometricRenderer.AssetBrowser) {
+                     // Define Dynamic Subclass if not exists
+                     if (!IsometricRenderer.TileBrowser) {
+                         IsometricRenderer.TileBrowser = class extends IsometricRenderer.TokenBrowser {
+                             get title() { return "Asset Browser"; }
+                             get sources() {
+                                 const sources = [...(IsometricRenderer.AssetBrowser.defaultSources || [])];
+                                 const custom = game.settings.get("canvas3dcompendium", "assetBrowserCustomPath");
+                                 if (custom) sources.push(custom);
+                                 // Add billboards manually (mimicking AssetBrowser behavior)
+                                 sources.push("modules/canvas3dcompendium/assets/Vegetation_billboard/high_res");
+                                 return sources;
+                             }
+                             // Force source to be 'user' to ensure it scans correctly if needed, 
+                             // but TokenBrowser.getSources logic should handle path iteration.
+                         }
+                     }
+                     BrowserClass = IsometricRenderer.TileBrowser;
+                 }
+
+                 new BrowserClass(proxyInput, this).render(true);
              });
         }
     }
@@ -1223,17 +1255,20 @@ Hooks.on("3DCanvasMapmakingPackRegisterTokenPacks", (tokenBrowser) => {
     IsometricRenderer.TokenBrowser = tokenBrowser;
 });
 
+Hooks.on("3DCanvasMapmakingPackRegisterAssetPacks", (assetBrowser) => {
+    IsometricRenderer.AssetBrowser = assetBrowser;
+});
+
 Hooks.once("ready", () => {
     // If Levels 3D Preview is not active, we need to manually trigger the hook
     // to initialize canvas3dcompendium and get the TokenBrowser.
     const canvas3D = game.modules.get("levels-3d-preview");
     const compendium = game.modules.get("canvas3dcompendium");
 
-    if (!IsometricRenderer.TokenBrowser && compendium?.active && !canvas3D?.active) {
+    if ((!IsometricRenderer.TokenBrowser || !IsometricRenderer.AssetBrowser) && compendium?.active && !canvas3D?.active) {
         const config = { UI: {} };
         Hooks.callAll("3DCanvasConfig", config);
-        if (config.UI.TokenBrowser) {
-            IsometricRenderer.TokenBrowser = config.UI.TokenBrowser;
-        }
+        if (config.UI.TokenBrowser) IsometricRenderer.TokenBrowser = config.UI.TokenBrowser;
+        if (config.UI.AssetBrowser) IsometricRenderer.AssetBrowser = config.UI.AssetBrowser;
     }
 });
