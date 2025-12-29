@@ -31,6 +31,16 @@ Hooks.once("init", () => {
         },
         default: "isometric"
     });
+
+    game.settings.register("3d-to-iso", "enableRotationUtils", {
+        name: game.i18n.localize("3D_TO_ISO.EnableRotationUtils"),
+        hint: game.i18n.localize("3D_TO_ISO.EnableRotationUtilsHint"),
+        scope: "world",
+        config: true,
+        type: Boolean,
+        default: true,
+        requiresReload: true
+    });
 });
 
 /* -------------------------------------------- */

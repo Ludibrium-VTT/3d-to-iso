@@ -98,13 +98,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
 
         // Default settings
-        this.modelPath = this.document?.getFlag("3d-to-iso", "modelPath") || "";
+        this.modelPath = options.modelPath || this.document?.getFlag("3d-to-iso", "modelPath") || "";
         this.renderMode = "cardinal";
         this.facing = "S";
         this.frameCount = 16;
         this.currentFrame = 0; // For numeric preview
         // Default resolution: 256 for Tiles, 1024 for Tokens/Actors
-        this.resolution = (this.tile) ? "256" : "1024";
+        this.resolution = options.resolution || ((this.tile) ? "256" : "1024");
+        this.savePath = options.savePath || null;
         
         // Lighting
         this.ambientIntensity = this.document?.getFlag("3d-to-iso", "ambientIntensity") ?? 0.7;
@@ -138,13 +139,21 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.loader = null;
         this.currentModel = null;
         this.baseCameraDistance = 50;
-        this.shaderMode = "none";
-        
         // Post-Processing
-        this.renderTarget = null;
-        this.postScene = null;
-        this.postCamera = null;
-        this.screenQuad = null;
+        this.effects = {
+            sepia: 0,
+            pixel: 0,
+            sketch: 0
+        };
+
+        this.postProcessing = {
+            bufferA: null,
+            bufferB: null,
+            quad: null,
+            scene: null,
+            camera: null,
+            materials: {}
+        };
     }
 
     static DEFAULT_OPTIONS = {
@@ -191,8 +200,11 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             frameCount: this.frameCount,
             currentFrame: this.currentFrame,
             resolution: this.resolution,
-            shaderMode: this.shaderMode,
-            shaderIntensity: (this.shaderIntensity !== undefined) ? this.shaderIntensity : 0.5,
+            renderMode: this.renderMode,
+            frameCount: this.frameCount,
+            currentFrame: this.currentFrame,
+            resolution: this.resolution,
+            effects: this.effects,
             ambientIntensity: this.ambientIntensity,
             linkRotations: this.linkRotations,
             adj: adj,
@@ -337,34 +349,64 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     _drawThreeJSFrame(includeOverlay = true) {
         if (!this.renderer) return;
-        
-        // 1. Clear Screen
-        this.renderer.setRenderTarget(null);
-        this.renderer.clear();
 
-        // 2. Render Main Scene (Model)
-        if (this.shaderMode === "none") {
-            this.renderer.render(this.scene, this.camera);
-        } else {
-            // Render to RenderTarget
-            this.renderer.setRenderTarget(this.renderTarget);
+        const pp = this.postProcessing;
+        if (!pp.bufferA) return; // Not ready
+
+        // 1. Render Scene to Buffer A (Base Image)
+        // We render to a buffer first so we can process it
+        this.renderer.setRenderTarget(pp.bufferA);
+        this.renderer.clear();
+        this.renderer.render(this.scene, this.camera);
+
+        // 2. Apply Effects Chain
+        // We ping-pong between A and B. 
+        // 'readBuffer' is where we read from (started as A).
+        // 'writeBuffer' is where we write to (starts as B).
+        let readBuffer = pp.bufferA;
+        let writeBuffer = pp.bufferB;
+
+        const activeEffects = Object.entries(this.effects).filter(([k, v]) => v > 0);
+        
+        for (let [effectName, intensity] of activeEffects) {
+            const material = pp.materials[effectName];
+            if (!material) continue;
+
+            // Update Uniforms
+            if (material.uniforms.tDiffuse) material.uniforms.tDiffuse.value = readBuffer.texture;
+            if (material.uniforms.intensity) material.uniforms.intensity.value = intensity;
+            
+            // Assign material to Quad and render
+            pp.quad.material = material;
+
+            this.renderer.setRenderTarget(writeBuffer);
             this.renderer.clear();
-            this.renderer.render(this.scene, this.camera);
-            
-            // Render Post-Proc Quad to Screen
-            this.renderer.setRenderTarget(null);
-            
-            if (this.screenQuad && this.screenQuad.material.uniforms.time) {
-                this.screenQuad.material.uniforms.time.value = performance.now() / 1000;
-            }
-            
-            this.renderer.render(this.postScene, this.postCamera);
+            this.renderer.render(pp.scene, pp.camera);
+
+            // Swap Buffers
+            const temp = readBuffer;
+            readBuffer = writeBuffer;
+            writeBuffer = temp;
         }
 
-        // 3. Render Overlay (Handles) - Always on Screen, No Shader
+        // 3. Final Output to Screen
+        // The final result is in 'readBuffer'. We need to get it to the screen.
+        // We can reuse the Sepia material with 0 intensity as a "Passthrough" or "Copy" shader.
+        this.renderer.setRenderTarget(null);
+        this.renderer.clear();
+        
+        const outputMat = pp.materials.sepia;
+        if (outputMat) {
+             outputMat.uniforms.tDiffuse.value = readBuffer.texture;
+             outputMat.uniforms.intensity.value = 0; // Ensure no effect
+             pp.quad.material = outputMat;
+             this.renderer.render(pp.scene, pp.camera);
+        }
+
+        // 4. Render Overlay (Handles)
         if (includeOverlay && this.overlayScene) {
-            this.renderer.clearDepth(); // Clear depth buffer so handles draw on top
-            this.renderer.render(this.overlayScene, this.camera);
+             this.renderer.clearDepth(); 
+             this.renderer.render(this.overlayScene, this.camera);
         }
     }
 
@@ -603,7 +645,17 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                 const name = event.target.name;
                 const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
                 
-                if (["rx", "ry", "rz", "zoom"].includes(name)) {
+                if (name.startsWith("effect.")) {
+                     const effectName = name.split(".")[1];
+                     this.effects[effectName] = parseFloat(value);
+                     
+                     // Update label
+                     const display = el.parentElement.querySelector(`.display-effect-${effectName}`);
+                     if (display) display.textContent = value;
+                     
+                     this._drawThreeJSFrame();
+                } 
+                else if (["rx", "ry", "rz", "zoom"].includes(name)) { // rx/ry/rz inputs removed, but safe to keep logic just in case
                     const numValue = parseFloat(value);
                     if (name === "zoom") this._syncZoom(numValue);
                     else if (this.linkRotations && ["rx", "ry", "rz"].includes(name)) {
@@ -612,7 +664,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     else getAdj()[name] = numValue;
 
                     this._updateCameraRotation();
-                    this._updateLabel(el, name, value);
+                    // this._updateLabel(el, name, value); // No longer needed for rotations
                 } else if(name === "frameCount") {
                     this.frameCount = parseInt(value);
                     this.render(); // Re-render to update max frame input
@@ -640,13 +692,6 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                 }
             });
 
-            if (el.name === "shaderMode") {
-                 el.addEventListener("change", (event) => {
-                    this.shaderMode = event.target.value;
-                    this._updatePostShader();
-                });
-            }
-
             // Live preview for sliders
             if (el.type === "range") {
                 el.addEventListener("input", (event) => {
@@ -655,32 +700,52 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     const numValue = parseFloat(value);
                     const adj = getAdj();
 
-                    if (name === "zoom") this._syncZoom(numValue);
-                    else if (name === "shaderIntensity") {
-                        this.shaderIntensity = numValue;
-                        if (this.screenQuad && this.screenQuad.material.uniforms.intensity) {
-                             this.screenQuad.material.uniforms.intensity.value = numValue;
-                        }
-                        // Update label
-                        const display = el.parentElement.querySelector('.display-shaderIntensity');
-                        if (display) display.textContent = numValue;
-                        return; 
+                    if (name.startsWith("effect.")) {
+                        const effectName = name.split(".")[1];
+                        this.effects[effectName] = numValue;
+                        // Find label in the parent form-group
+                        const group = el.closest(".form-group");
+                        const display = group ? group.querySelector(`.display-effect-${effectName}`) : null;
+                        if (display) display.textContent = `- ${value}`;
+                        this._drawThreeJSFrame();
+                        return;
+                    }
+
+                    if (name === "zoom") {
+                         this._syncZoom(numValue);
+                         const zoomInput = this.element.querySelector('input[name="zoom"]');
+                         this._updateLabel(zoomInput, "zoom", numValue);
                     }
                     else if (name === "ambientIntensity") {
                         this.ambientIntensity = numValue;
                         if (this.ambientLight) this.ambientLight.intensity = numValue;
                         
-                        const display = el.parentElement.querySelector('.display-ambientIntensity');
-                        if (display) display.textContent = numValue; // Using fixed label update logic here
+                        // Find label in parent group (it's now in the label, above form-fields)
+                        const group = el.closest(".form-group");
+                        // We use a slightly different selector or just generic class? 
+                        // The template uses specific classes: .display-ambientIntensity
+                        // Note: I put a hidden span in .form-fields in Previous Step for ambient? 
+                        // No, I put: <label>Ambient Light <span class="value">- {{ambientIntensity}}</span></label>
+                        // And <span class="range-value display-ambientIntensity" style="display:none">...</span> in fields (leftover?)
+                        // I should target the one in the label. I didn't give the label span a class like 'display-ambientIntensity' in the previous step?
+                        // Let's check previous step content.
+                        
+                        // Previous step content for Ambient:
+                        // <label>Ambient Light <span class="value">- {{ambientIntensity}}</span></label>
+                        // ... <span class="range-value display-ambientIntensity" style="display:none">
+                        
+                        // I forgot to add a class to the span in the label for Ambient! 
+                        // For effects I added `display-effect-sepia`.
+                        
+                        // I need to fix the template for Ambient first to add a targeting class to the label span.
+                        // OR just find the .value span inside the label.
+                        
+                        const labelValue = group.querySelector("label .value");
+                        if (labelValue) labelValue.textContent = `- ${numValue}`;
                         return;
                     }
-                    else if (this.linkRotations && ["rx", "ry", "rz"].includes(name)) {
-                         this._syncRotation(name, numValue);
-                    }
-                    else adj[name] = numValue;
-
+                    
                     this._updateCameraRotation();
-                    this._updateLabel(el, name, value);
                 });
             }
         });
@@ -806,7 +871,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Check if we are operating on a tile or token/actor
         const isTile = this.document?.documentName === "Tile";
         const settingKey = isTile ? "tileSavePath" : "tokenSavePath";
-        const uploadDir = game.settings.get("3d-to-iso", settingKey) || "isometric-renders";
+        // Priority: Explicit Override > Settings > Default
+        const uploadDir = this.savePath || game.settings.get("3d-to-iso", settingKey) || "isometric-renders";
         
         const file = new File([blob], filename, { type: "image/webp" });
 
@@ -932,41 +998,58 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     /* -------------------------------------------- */
 
     _setupPostProcessing(size) {
-        if (this.renderTarget) this.renderTarget.dispose();
+        // Dispose old targets
+        if (this.postProcessing.bufferA) this.postProcessing.bufferA.dispose();
+        if (this.postProcessing.bufferB) this.postProcessing.bufferB.dispose();
         
-        this.renderTarget = new THREE.WebGLRenderTarget(size, size);
-        this.postScene = new THREE.Scene();
-        this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        // Create Double Buffers
+        const params = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
+        this.postProcessing.bufferA = new THREE.WebGLRenderTarget(size, size, params);
+        this.postProcessing.bufferB = new THREE.WebGLRenderTarget(size, size, params);
+        
+        // Setup Post Scene (Single Quad, material swapped per pass)
+        this.postProcessing.scene = new THREE.Scene();
+        this.postProcessing.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
         
         const geom = new THREE.PlaneGeometry(2, 2);
-        const mat = new THREE.ShaderMaterial({
+        
+        // --- Create Materials for each effect ---
+        
+        // 1. Sepia
+        this.postProcessing.materials.sepia = new THREE.ShaderMaterial({
             vertexShader: POST_VERTEX_SHADER,
             fragmentShader: SEPIA_FRAGMENT_SHADER,
             uniforms: {
-                tDiffuse: { value: this.renderTarget.texture },
-                resolution: { value: new THREE.Vector2(size, size) },
-                intensity: { value: (this.shaderIntensity !== undefined) ? this.shaderIntensity : 0.5 },
-                time: { value: 0 }
+                tDiffuse: { value: null },
+                intensity: { value: 0 }
             }
         });
-        
-        this.screenQuad = new THREE.Mesh(geom, mat);
-        this.postScene.add(this.screenQuad);
-        this._updatePostShader();
-    }
 
-    _updatePostShader() {
-        if (!this.screenQuad) return;
-        
-        let shader = SEPIA_FRAGMENT_SHADER;
-        if (this.shaderMode === "technicolor") shader = TECHNICOLOR_FRAGMENT_SHADER;
-        if (this.shaderMode === "pixel") shader = PIXEL_FRAGMENT_SHADER;
-        if (this.shaderMode === "sketch") shader = SKETCH_FRAGMENT_SHADER;
-        if (this.shaderMode === "toon") shader = TOON_FRAGMENT_SHADER;
-        if (this.shaderMode === "glitch") shader = GLITCH_FRAGMENT_SHADER;
-        
-        this.screenQuad.material.fragmentShader = shader;
-        this.screenQuad.material.needsUpdate = true;
+        // 2. Pixel
+        this.postProcessing.materials.pixel = new THREE.ShaderMaterial({
+            vertexShader: POST_VERTEX_SHADER,
+            fragmentShader: PIXEL_FRAGMENT_SHADER,
+            uniforms: {
+                tDiffuse: { value: null },
+                resolution: { value: new THREE.Vector2(size, size) },
+                intensity: { value: 0 }
+            }
+        });
+
+        // 3. Sketch
+        this.postProcessing.materials.sketch = new THREE.ShaderMaterial({
+            vertexShader: POST_VERTEX_SHADER,
+            fragmentShader: SKETCH_FRAGMENT_SHADER,
+            uniforms: {
+                tDiffuse: { value: null },
+                resolution: { value: new THREE.Vector2(size, size) },
+                intensity: { value: 0 }
+            }
+        });
+
+        // Quad gets a dummy material initially
+        this.postProcessing.quad = new THREE.Mesh(geom, this.postProcessing.materials.sepia); 
+        this.postProcessing.scene.add(this.postProcessing.quad);
     }
 
     /* -------------------------------------------- */

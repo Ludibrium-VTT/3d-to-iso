@@ -8,6 +8,8 @@ import { detectAvailableFacings, getFacingFromRotation, generateGallery } from "
 
 // Attempt AppV2 Integration (V13+)
 Hooks.once("ready", () => {
+    if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
+
     // If TileConfig is an ApplicationV2, integrate it properly
     if (foundry.applications.sheets.TileConfig) {
         integrate3DToIso(foundry.applications.sheets.TileConfig);
@@ -20,6 +22,8 @@ Hooks.once("ready", () => {
  * We include the same logic here to support V1-style sheets.
  */
 Hooks.on("renderTileConfig", async (app, html, data) => {
+    if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
+
     // Determine the root element. ApplicationV1 passed jQuery, V2 passes HTMLElement.
     // We want vanilla HTMLElement.
     const element = (html instanceof jQuery) ? html[0] : html;
@@ -151,6 +155,8 @@ Hooks.on("renderTileConfig", async (app, html, data) => {
 /* -------------------------------------------- */
 
 Hooks.on("preUpdateTile", (tileDoc, update, options, userId) => {
+    if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
+
     // Only proceed if rotation is changing
     if (update.rotation === undefined) return;
 
@@ -180,6 +186,8 @@ Hooks.on("preUpdateTile", (tileDoc, update, options, userId) => {
 /* -------------------------------------------- */
 
 Hooks.on("updateTile", async (tileDoc, update, options, userId) => {
+    if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
+
     // Skip detection if this is a rotation update
     if (update.texture?.src && update.rotation === undefined) {
          const is3d = tileDoc.getFlag("3d-to-iso", "enabled");

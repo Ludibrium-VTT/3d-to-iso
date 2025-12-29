@@ -30,6 +30,7 @@ Before using the module, please configure the global settings in **Game Settings
 2. Navigate to the **Iso3D** tab.
 3. Click **"Open 3D Renderer"**.
 4. Select a 3D model using the file picker.
+   > **Note**: The file picker is unrestricted to allow you to preview related images (like concept art or thumbnails) in the same folder. However, you must select valid **`.glb`** or **`.gltf`** files. Selecting other file types will result in an error.
 5. Adjust the model's orientation, lighting, and style settings.
 6. Click **"Process and Assign"**. The module will automatically generate sprites for all directions and assign them to the token.
 
@@ -38,6 +39,61 @@ Before using the module, please configure the global settings in **Game Settings
 2. **Ensure the Tile is Saved**: The renderer requires a saved document to function. (Unsaved tiles from the Create Tile tool will show disabled buttons with a warning).
 3. Go to the **Iso3D** tab and follow the same rendering process.
 4. The Tile will now rotate visually when its rotation property is changed!
+
+## Standalone Usage
+If you prefer not to have `3d-to-iso` manage your token art automatically (or if you have disabled "Enable Rotation & Management Utils" in settings), you can still use the renderer to generate assets.
+
+### Accessing via Macro
+You can launch the renderer programmatically using a macro. You can also pass options like `resolution` or `modelPath` directly if you want to override defaults or don't have a configured document.
+
+```javascript
+const { IsometricRenderer } = game.modules.get("3d-to-iso").api;
+
+new IsometricRenderer({
+    resolution: "512",                     // Optional: Override default resolution
+    modelPath: "path/to/my_model.glb",     // Optional: Pre-load a specific model
+    savePath: "custom-iso-folder"          // Optional: Override default save location
+}).render(true);
+```
+
+### Save Locations
+When running in standalone mode (without a target Token/Tile), the renderer will save images to the default locations configured in the module settings:
+- **Tokens**: `[World Path]/isometric-renders/tokens`
+- **Tiles**: `[World Path]/isometric-renders/tiles`
+
+## Using External Sprites
+You don't have to use the built-in renderer! If you have sprites from other sources (like Blender renders, HeroForge exports, or pixel art packs), you can import them directly.
+
+### File Naming Convention
+For the module to automatically detect and assign sprites to the correct facing, your files must follow a specific naming schema. The module supports two modes:
+
+**1. Cardinal Mode (Standard)**
+Append the direction abbreviation to the filename, preceded by an underscore.
+- **Example**: `Fighter_N.png`, `Fighter_NE.png`, `Fighter_SW.png`.
+- **Supported Suffixes**: `_N`, `_NE`, `_E`, `_SE`, `_S`, `_SW`, `_W`, `_NW`. (Also supports `_NNE`, `_SSW`, etc. for 16-way).
+
+**2. Numeric Mode (High Fidelity)**
+Append the frame number or angle index to the filename.
+- **Example**: `Goblin_000.png`, `Goblin_001.png` ... `Goblin_031.png`.
+- **Note**: The module will automatically detect the sequence and map it to a 360-degree rotation.
+
+### How to Import
+1. Place all your sprite files in the same folder.
+2. Open the Token or Tile configuration.
+3. Go to the **Iso3D** tab.
+4. Click **"Select Token Image"** (or "Select Tile Image").
+5. Choose **ANY** one of the sprite files in the folder (e.g., `Fighter_S.png`).
+6. The module will automatically scan the folder for all matching siblings (`Fighter_N.png`, etc.) and set them up for rotation.
+
+---
+
+## Recommended Modules
+It is highly recommended to install this module alongside the following asset libraries, which provide a vast collection of 3D models perfect for use with this renderer:
+
+- **[3D Canvas Token Collection](https://foundryvtt.com/packages/canvas3dtokencompendium)**: A comprehensive collection of 3D tokens.
+- **[3D Canvas Mapmaking Collection](https://foundryvtt.com/packages/canvas3dcompendium)**: A wide variety of environment and prop assets.
+
+If you're using the 3D Canvas assets, make sure that your use is permitted by the [licenses](https://wiki.theripper93.com/levels-3d-preview/canvas3dcompendium#licensecredits) for the various assets you are using.
 
 ## Planned Features
 - **Scene Lighting Baking**: Future updates aim to allow baking scene lighting directly into the isometric tiles, enabling assets to settle perfectly into the environment's illumination.

@@ -274,6 +274,8 @@ export const integrate3DToIso = (ConfigClass) => {
 };
 
 Hooks.once("ready", () => {
+    if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
+
     // Apply to standard TokenConfig
     integrate3DToIso(foundry.applications.sheets.TokenConfig);
     
@@ -286,6 +288,8 @@ Hooks.once("ready", () => {
 /* -------------------------------------------- */
 
 Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
+    if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
+
     // Only proceed if rotation is being updated
     if (update.rotation === undefined) return;
 
@@ -326,6 +330,8 @@ Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
  * Trigger asset detection when a token's texture is manually updated.
  */
 Hooks.on("updateToken", async (tokenDoc, update, options, userId) => {
+    if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return; 
+
     // If the texture path was changed manually
     // Skip detection if this update was triggered by a rotation (which includes texture.src change)
     if (update.texture?.src && update.rotation === undefined) {

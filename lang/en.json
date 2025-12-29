@@ -27,6 +27,7 @@
     "RenderAll": "Render All Facings",
     "BatchProgress": "Rendering all facings... ({current}/{total})",
     "ShaderEffect": "Shader Effect",
+    "ShaderEffects": "Shader Effects",
     "ShaderNone": "None (Realistic)",
     "ShaderSepia": "Sepia Tone",
     "ShaderDotScreen": "Dot Screen",
@@ -56,6 +57,8 @@
     "PreviewFrame": "Preview Frame",
     "HighFrameCountWarning": "generating more than 36 frames may take a significant amount of time and offers diminishing visual returns. Are you sure you want to proceed?",
     "OutputPrefix": "Output Filename Prefix",
-    "OutputPrefixPlaceholder": "Optional (e.g. MyToken)"
+    "OutputPrefixPlaceholder": "Optional (e.g. MyToken)",
+    "EnableRotationUtils": "Enable Rotation & Management Utils",
+    "EnableRotationUtilsHint": "Turn this off if you only want to use the 3d renderer but you don't want 3d-to-Iso to manage tile and token art when rotating."
   }
 }

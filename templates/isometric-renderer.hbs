@@ -1,12 +1,17 @@
 <div class="isometric-renderer-app" data-part="renderer">
     <div id="three-container" class="preview-viewport">
         <!-- Three.js Canvas will be injected here -->
+        <div class="viewport-hud">
+            <div class="hud-item"><span class="label">X:</span> <span class="value display-rx">{{displayValues.rx}}°</span></div>
+            <div class="hud-item"><span class="label">Y:</span> <span class="value display-ry">{{displayValues.ry}}°</span></div>
+            <div class="hud-item"><span class="label">Z:</span> <span class="value display-rz">{{displayValues.rz}}°</span></div>
+        </div>
     </div>
 
     <div class="controls">
         <div class="form-group">
             <label>{{localize "3D_TO_ISO.ModelPath"}}</label>
-            <div class="form-fields">
+            <div class="form-fields" style="display: flex; flex-wrap: nowrap; align-items: center; gap: 5px;">
                 <input type="text" name="modelPath" value="{{modelPath}}" placeholder="path/to/model.glb">
                 <button type="button" class="file-picker" data-type="imagevideo" data-target="modelPath" title="{{localize "3D_TO_ISO.Browse"}}">
                     <i class="fas fa-file-import"></i>
@@ -84,34 +89,38 @@
             </div>
         </div>
 
-        <div class="form-group">
-            <label>Ambient Light</label>
+        <div class="form-group compact-slider">
+            <label>Ambient Light <span class="value">- {{ambientIntensity}}</span></label>
             <div class="form-fields">
                 <input type="range" name="ambientIntensity" value="{{ambientIntensity}}" min="0" max="2" step="0.05">
-                <span class="range-value display-ambientIntensity">{{ambientIntensity}}</span>
+                <span class="range-value display-ambientIntensity" style="display:none">{{ambientIntensity}}</span>
             </div>
         </div>
 
-        <div class="form-group">
-            <label>{{localize "3D_TO_ISO.ShaderEffect"}}</label>
-            <div class="form-fields">
-                <select name="shaderMode">
-                    <option value="none" {{#if (eq shaderMode "none")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderNone"}}</option>
-                    <option value="sepia" {{#if (eq shaderMode "sepia")}}selected{{/if}}>{{localize "3D_TO_ISO.ShaderSepia"}}</option>
-                    <option value="pixel" {{#if (eq shaderMode "pixel")}}selected{{/if}}>Pixel</option>
-                    <option value="sketch" {{#if (eq shaderMode "sketch")}}selected{{/if}}>Sketch</option>
-                </select>
-            </div>
+        <details class="shader-section">
+            <summary><i class="fas fa-magic"></i> {{localize "3D_TO_ISO.ShaderEffects"}}</summary>
             
-            <div class="form-group">
-                <label>Intensity</label>
+            <div class="form-group compact-slider">
+                <label>{{localize "3D_TO_ISO.ShaderSepia"}} <span class="value display-effect-sepia">- {{effects.sepia}}</span></label>
                 <div class="form-fields">
-                    <input type="range" name="shaderIntensity" value="{{shaderIntensity}}" min="0" max="1" step="0.05">
-                    <span class="range-value display-shaderIntensity">{{shaderIntensity}}</span>
+                    <input type="range" name="effect.sepia" value="{{effects.sepia}}" min="0" max="1" step="0.05">
                 </div>
             </div>
-            <p class="notes">{{localize "3D_TO_ISO.ShaderNote"}}</p>
-        </div>
+
+            <div class="form-group compact-slider">
+                <label>Pixelation <span class="value display-effect-pixel">- {{effects.pixel}}</span></label>
+                <div class="form-fields">
+                    <input type="range" name="effect.pixel" value="{{effects.pixel}}" min="0" max="1" step="0.05">
+                </div>
+            </div>
+
+            <div class="form-group compact-slider">
+                <label>Sketch <span class="value display-effect-sketch">- {{effects.sketch}}</span></label>
+                <div class="form-fields">
+                    <input type="range" name="effect.sketch" value="{{effects.sketch}}" min="0" max="1" step="0.05">
+                </div>
+            </div>
+        </details>
 
         <hr>
 
@@ -120,27 +129,6 @@
             <div class="form-fields">
                 <input type="checkbox" name="linkRotations" {{checked linkRotations}}>
                 <span class="notes">{{localize "3D_TO_ISO.LinkRotationsHint"}}</span>
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label>{{localize "3D_TO_ISO.RotationX"}} ({{displayValues.rx}}°)</label>
-            <div class="form-fields">
-                <input type="range" name="rx" value="{{adj.rx}}" min="-180" max="180" step="1">
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label>{{localize "3D_TO_ISO.RotationY"}} ({{displayValues.ry}}°)</label>
-            <div class="form-fields">
-                <input type="range" name="ry" value="{{adj.ry}}" min="-180" max="180" step="1">
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label>{{localize "3D_TO_ISO.RotationZ"}} ({{displayValues.rz}}°)</label>
-            <div class="form-fields">
-                <input type="range" name="rz" value="{{adj.rz}}" min="-180" max="180" step="1">
             </div>
         </div>
 

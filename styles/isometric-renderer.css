@@ -157,3 +157,34 @@
     margin-top: 2px;
     color: var(--color-text-dark-secondary);
 }
+/* Compact Slider Layout */
+.isometric-renderer-app .form-group.compact-slider {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    margin-bottom: 0.5rem;
+}
+
+.isometric-renderer-app .form-group.compact-slider label {
+    flex: 0 0 auto;
+    font-size: 0.9em;
+}
+
+.isometric-renderer-app .form-group.compact-slider label .value {
+    font-weight: normal;
+    color: var(--color-text-dark-secondary);
+    margin-left: 5px;
+}
+
+.isometric-renderer-app .form-group.compact-slider .form-fields {
+    flex: 0 0 auto;
+}
+
+.isometric-renderer-app .form-group.compact-slider input[type="range"] {
+    margin: 0;
+    height: 14px;
+}
+
+.shader-section .form-group.compact-slider:last-child {
+    margin-bottom: 0;
+}
