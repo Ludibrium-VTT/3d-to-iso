@@ -953,6 +953,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     async _onRenderAll() {
         if (!this.currentModel) return ui.notifications.warn("No model loaded.");
+        if (this._contextLost) return ui.notifications.error("Cannot render: WebGL Context Lost. Please wait for restoration or reload.");
         
         let targets = [];
         if (this.renderMode === "numeric") {
@@ -971,19 +972,71 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             targets = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
         }
 
+        const total = targets.length;
         ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: 0, total: targets.length }));
         
-        const total = targets.length;
+        // Track blocking state for notifications
+        this._waitingForRestore = false;
+        let hadContextLoss = false;
       
         let count = 0;
-        const results = {}; // Keep results for _onProcessAndAssign
-        for (const t of targets) {
+        const results = {}; 
+        
+        for (let i = 0; i < targets.length; i++) {
+             const t = targets[i];
+
+             // 1. Pause if Context Lost
+             while (this._contextLost) {
+                 if (!this._waitingForRestore) {
+                     console.warn("3D-to-Iso: Pausing render batch for WebGL restoration...");
+                     ui.notifications.warn("WebGL Context Lost. Pausing batch render...", {permanent: false});
+                     this._waitingForRestore = true;
+                     hadContextLoss = true;
+                 }
+                 await new Promise(resolve => setTimeout(resolve, 500));
+             }
+             
+             // 2. Resume after Restore
+             if (this._waitingForRestore) {
+                 console.log("3D-to-Iso: Resuming render batch...");
+                 ui.notifications.info("WebGL Context Restored. Resuming...", {permanent: false});
+                 this._waitingForRestore = false;
+                 // Allow strict 1 sec for things to settle
+                 await new Promise(resolve => setTimeout(resolve, 1000));
+             }
+
+             // 3. Render
              // Pass notify=false to avoid spam
              const path = await this._onRenderAndSave(t, false);
+             
+             // 4. Verify Context Integrity Post-Render
+             // If context was lost DURING the render, the result is likely garbage/empty.
+             if (this._contextLost) {
+                 console.warn(`3D-to-Iso: Context lost during frame ${t}. Retrying...`);
+                 hadContextLoss = true;
+                 i--; // Retry this frame
+                 continue;
+             }
+
              results[t] = path;
              count++;
-             // Optional: progress bar could be implemented here
+             
+             // Update progress every 10 frames or so to not spam UI updates but give feedback
+             if (count % 10 === 0) {
+                 ui.notifications.info(game.i18n.format("3D_TO_ISO.BatchProgress", { current: count, total: total }));
+             }
+
+             // Yield to main thread to prevent context loss from timeout
+             // Slightly increased delay to be safer
+             await new Promise(resolve => setTimeout(resolve, 20));
         }
+        
+        ui.notifications.info(`Render Complete! ${count}/${total} images generated.`);
+        
+        if (hadContextLoss) {
+            ui.notifications.warn("WebGL Context was lost and restored during this process. It is recommended to Reload Foundry VTT to ensure system stability.", {permanent: true});
+        }
+        
         return results;
     }
 
