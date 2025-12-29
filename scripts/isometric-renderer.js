@@ -223,6 +223,50 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
+    async close(options) {
+        // Stop animation loop
+        if (this.renderer) {
+            this.renderer.setAnimationLoop(null);
+            this.renderer.dispose();
+        }
+        
+        // Traverse and dispose Scene
+        const disposeObject = (obj) => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                else obj.material.dispose();
+            }
+        };
+
+        if (this.scene) {
+            this.scene.traverse(disposeObject);
+            this.scene.clear();
+        }
+        if (this.overlayScene) {
+            this.overlayScene.traverse(disposeObject);
+            this.overlayScene.clear();
+        }
+
+        // Dispose Post-Processing Targets
+        if (this.postProcessing) {
+            if (this.postProcessing.bufferA) this.postProcessing.bufferA.dispose();
+            if (this.postProcessing.bufferB) this.postProcessing.bufferB.dispose();
+            Object.values(this.postProcessing.materials).forEach(m => m.dispose());
+        }
+
+        if (this.transformControl) {
+            this.transformControl.dispose();
+        }
+
+        this.renderer = null;
+        this.scene = null;
+        this.camera = null;
+        this.currentModel = null;
+        
+        return super.close(options);
+    }
+
     _onRender(context, options) {
         super._onRender(context, options);
         if ( !this.element ) return;
@@ -231,10 +275,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         if (!container) return;
 
         if (!this.renderer) {
+            this._contextLost = false;
             this._initializeThreeJS(container);
         } else {
             // Re-attach existing renderer's canvas
-            container.appendChild(this.renderer.domElement);
+            if (this.renderer.domElement.parentElement !== container) {
+                container.appendChild(this.renderer.domElement);
+            }
             // Resize to keep square within current container bounds
             const size = Math.min(container.clientWidth, container.clientHeight) - 20;
             if ( size > 0 ) this.renderer.setSize(size, size);
@@ -242,6 +289,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
         this._attachEventListeners();
     }
+
 
     /* -------------------------------------------- */
 
@@ -274,6 +322,20 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const size = Math.min(container.clientWidth, container.clientHeight) - 20; // 20px padding
         this.renderer.setSize(size, size);
         container.appendChild(this.renderer.domElement);
+
+        // Context Loss Handling
+        this.renderer.domElement.addEventListener("webglcontextlost", (event) => {
+            event.preventDefault();
+            console.warn("3D-to-Iso: WebGL Context Lost");
+            this._contextLost = true;
+            if (this.renderer) this.renderer.setAnimationLoop(null); // Stop loop
+        });
+
+        this.renderer.domElement.addEventListener("webglcontextrestored", () => {
+             console.log("3D-to-Iso: WebGL Context Restored");
+             this._contextLost = false;
+             if (this.renderer) this._animate(); // Restart loop
+        });
 
         // Setup Lighting
         this.ambientLight = new THREE.AmbientLight(0xffffff, this.ambientIntensity);
