@@ -1,10 +1,15 @@
 <div class="isometric-renderer-app" data-part="renderer">
     <div id="three-container" class="preview-viewport">
+        <div class="zoom-slider-container">
+            <i class="fas fa-search-plus" style="color: rgba(255,255,255,0.7); margin-bottom: 5px; font-size: 12px;"></i>
+            <input type="range" name="zoom" value="{{adj.zoom}}" min="0.1" max="5" step="0.1" orient="vertical">
+        </div>
         <!-- Three.js Canvas will be injected here -->
         <div class="viewport-hud">
             <div class="hud-item"><span class="label">X:</span> <span class="value display-rx">{{displayValues.rx}}°</span></div>
             <div class="hud-item"><span class="label">Y:</span> <span class="value display-ry">{{displayValues.ry}}°</span></div>
             <div class="hud-item"><span class="label">Z:</span> <span class="value display-rz">{{displayValues.rz}}°</span></div>
+            <div class="hud-item"><span class="label">Zoom:</span> <span class="value display-zoom">{{displayValues.zoom}}x</span></div>
         </div>
     </div>
 
@@ -137,12 +142,7 @@
             </div>
         </div>
 
-        <div class="form-group">
-            <label>{{localize "3D_TO_ISO.Zoom"}} ({{displayValues.zoom}}x)</label>
-            <div class="form-fields">
-                <input type="range" name="zoom" value="{{adj.zoom}}" min="0.1" max="5" step="0.1">
-            </div>
-        </div>
+
 
         <div class="form-group reset-buttons">
             <button type="button" class="reset-current-btn"><i class="fas fa-undo"></i> {{localize "3D_TO_ISO.ResetCurrent"}}</button>

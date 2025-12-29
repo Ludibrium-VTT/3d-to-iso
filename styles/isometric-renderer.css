@@ -1,3 +1,4 @@
+/* Existing Styles */
 .isometric-renderer-app {
     display: flex;
     flex-direction: column;
@@ -187,4 +188,55 @@
 
 .shader-section .form-group.compact-slider:last-child {
     margin-bottom: 0;
+}
+
+/* NEW: Vertical Zoom Slider & HUD */
+.isometric-renderer-app .zoom-slider-container {
+    position: absolute;
+    right: 10px; /* Moves to right side */
+    top: 50%;
+    transform: translateY(-50%);
+    height: 60%; /* Slightly smaller */
+    display: flex;
+    flex-direction: column; /* Icon above slider */
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 20px;
+    padding: 10px 5px;
+    gap: 5px; 
+}
+
+.isometric-renderer-app .zoom-slider-container input[type="range"] {
+    writing-mode: bt-lr; /* IE */
+    -webkit-appearance: slider-vertical; /* WebKit */
+    width: 8px;
+    flex: 1; /* Take remaining height */
+    margin: 0;
+}
+
+.isometric-renderer-app .viewport-hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 5px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.isometric-renderer-app .viewport-hud .hud-item {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: monospace;
+}
+
+.isometric-renderer-app .viewport-hud .hud-item .label {
+    opacity: 0.7;
+    margin-right: 5px;
 }

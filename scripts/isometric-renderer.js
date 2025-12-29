@@ -380,16 +380,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                  }
 
                  if (this.element) {
-                     const setVal = (name, val) => {
-                         const inputs = this.element.querySelectorAll(`input[name="${name}"]`);
-                         inputs.forEach(i => {
-                             i.value = val;
-                             this._updateLabel(i, name, val);
-                         });
+                     // Update HUD Labels directly
+                     const updateHud = (key, val) => {
+                         const el = this.element.querySelector(`.display-${key}`);
+                         if (el) el.textContent = `${val.toFixed(0)}°`;
                      };
-                     setVal("rx", rx);
-                     setVal("ry", ry);
-                     setVal("rz", rz);
+                     updateHud("rx", rx);
+                     updateHud("ry", ry);
+                     updateHud("rz", rz);
                  }
              }
         });
@@ -703,7 +701,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             const zoomInput = html.querySelector('input[name="zoom"]');
             if (zoomInput) {
                 zoomInput.value = adj.zoom;
-                this._updateLabel(zoomInput, "zoom", adj.zoom);
+                const display = html.querySelector(".display-zoom");
+                if (display) display.textContent = `${adj.zoom.toFixed(1)}x`;
             }
         }, { passive: false });
 
@@ -723,16 +722,23 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                      
                      this._drawThreeJSFrame();
                 } 
-                else if (["rx", "ry", "rz", "zoom"].includes(name)) { // rx/ry/rz inputs removed, but safe to keep logic just in case
+                else if (name === "zoom") {
                     const numValue = parseFloat(value);
-                    if (name === "zoom") this._syncZoom(numValue);
-                    else if (this.linkRotations && ["rx", "ry", "rz"].includes(name)) {
+                    this._syncZoom(numValue);
+                    this._updateCameraRotation();
+                    
+                    const display = this.element.querySelector(".display-zoom");
+                    if (display) display.textContent = `${numValue.toFixed(1)}x`;
+                }
+                else if (["rx", "ry", "rz"].includes(name)) { 
+                    const numValue = parseFloat(value);
+                    if (this.linkRotations) {
                          this._syncRotation(name, numValue);
                     }
                     else getAdj()[name] = numValue;
 
                     this._updateCameraRotation();
-                    // this._updateLabel(el, name, value); // No longer needed for rotations
+                    // Inputs removed from DOM, so no label update needed here usually
                 } else if(name === "frameCount") {
                     this.frameCount = parseInt(value);
                     this.render(); // Re-render to update max frame input
@@ -781,8 +787,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
                     if (name === "zoom") {
                          this._syncZoom(numValue);
-                         const zoomInput = this.element.querySelector('input[name="zoom"]');
-                         this._updateLabel(zoomInput, "zoom", numValue);
+                         const display = this.element.querySelector(".display-zoom");
+                         if (display) display.textContent = `${numValue.toFixed(1)}x`;
                     }
                     else if (name === "ambientIntensity") {
                         this.ambientIntensity = numValue;
@@ -811,6 +817,10 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                         const labelValue = group.querySelector("label .value");
                         if (labelValue) labelValue.textContent = `- ${numValue}`;
                         return;
+                    } else if (["rx", "ry", "rz"].includes(name)) {
+                         if (this.linkRotations) this._syncRotation(name, numValue);
+                         else getAdj()[name] = numValue;
+                         this._updateLabel(el, name, numValue);
                     }
                     
                     this._updateCameraRotation();
