@@ -1106,15 +1106,22 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const keys = Object.keys(paths);
         if (!paths || keys.length === 0) return;
 
-        // 2. Save settings to Document flags (Tile, Token, or Actor)
-        await this.document.setFlag("3d-to-iso", "modelPath", this.modelPath);
-        await this.document.setFlag("3d-to-iso", "adjustments", this.adjustments);
-        await this.document.setFlag("3d-to-iso", "facingMode", this.renderMode); // Save Mode!
-
-        // 3. Update the available facings flag
+        // 2. Prepare Update Data for Atomic Commit
+        // We determine the target document. If a specific token is being edited, we update THAT token (overrides).
+        // If an Actor is being edited (no specific token), we update the Actor.
+        // This ensures flags and texture stay in sync, preventing "404 Gallery" race conditions.
+        const target = this.token || this.document;
+        const isActor = target.documentName === "Actor";
+        
+        const updateData = {};
+        
+        // Flags
+        updateData["flags.3d-to-iso.modelPath"] = this.modelPath;
+        updateData["flags.3d-to-iso.adjustments"] = this.adjustments;
+        updateData["flags.3d-to-iso.facingMode"] = this.renderMode;
+        
         if (keys.length > 0) {
-            // Re-derive suffixes from logic used in _onRenderAndSave
-            let storedFacings = [];
+             let storedFacings = [];
             if (this.renderMode === "numeric") {
                 const isTiny = this.frameCount < 10;
                 const pad = isTiny ? 1 : 3;
@@ -1122,45 +1129,29 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             } else {
                 storedFacings = keys;
             }
-            
-            await this.document.setFlag("3d-to-iso", "availableFacings", storedFacings);
+             updateData["flags.3d-to-iso.availableFacings"] = storedFacings;
+             updateData["flags.3d-to-iso.enabled"] = true; 
         }
 
-        // Pick the "first" image to set as default.
+        // Texture Source
         let primaryKey = keys[0];
         if (this.renderMode === "cardinal" && paths.NE) primaryKey = "NE";
         if (this.renderMode === "numeric") primaryKey = keys[0]; // Frame 0
-
         const primaryPath = paths[primaryKey];
-        const isTile = this.document.documentName === "Tile";
 
-        // 4. Update the document
-        if (isTile) {
-            await this.document.update({
-                _id: this.document.id,
-                "texture.src": primaryPath,
-                "flags.3d-to-iso.enabled": true
-            }, { from3DApp: true });
+        if (isActor) {
+             updateData["prototypeToken.texture.src"] = primaryPath;
+             updateData["prototypeToken.flags.3d-to-iso.enabled"] = true;
         } else {
-            // Actor / Token Logic
-            // If we have a specific Token instance targeted
-            if (this.token && this.token instanceof TokenDocument) {
-                await this.token.update({
-                    "texture.src": primaryPath,
-                    "flags.3d-to-iso.enabled": true
-                }, { from3DApp: true });
-            }
-            
-            // If we have an Actor, update prototype (if it's an Actor document)
-            if (this.actor && this.actor.documentName === "Actor") {
-                await this.actor.update({
-                    "prototypeToken.texture.src": primaryPath,
-                    "prototypeToken.flags.3d-to-iso.enabled": true
-                });
-            }
+             // Token or Tile
+             updateData["texture.src"] = primaryPath;
         }
 
-        ui.notifications.info(`Successfully assigned 3D renders to ${this.document.name || this.document.id}.`);
+        // 3. Execute Atomic Update
+        await target.update(updateData, { from3DApp: true });
+        
+        // Notify
+        ui.notifications.info(game.i18n.format("3D_TO_ISO.ProcessComplete", { count: keys.length }));
         this.close();
     }
 

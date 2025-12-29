@@ -61,7 +61,10 @@ export const integrate3DToIso = (ConfigClass) => {
                  isEnabled = !!doc.prototypeToken?.flags?.["3d-to-iso"]?.enabled;
             }
             
-            const availableFacings = (doc.documentName === "Actor" ? doc.getFlag("3d-to-iso", "availableFacings") : targetDoc.getFlag("3d-to-iso", "availableFacings")) || (actor?.getFlag("3d-to-iso", "availableFacings") || []);
+            const availableFacings = (this._pendingFacings !== undefined) 
+                ? this._pendingFacings 
+                : ((doc.documentName === "Actor" ? doc.getFlag("3d-to-iso", "availableFacings") : targetDoc.getFlag("3d-to-iso", "availableFacings")) || (actor?.getFlag("3d-to-iso", "availableFacings") || []));
+            
             const modelPath = (doc.documentName === "Actor" ? doc.getFlag("3d-to-iso", "modelPath") : targetDoc.getFlag("3d-to-iso", "modelPath")) || (actor?.getFlag("3d-to-iso", "modelPath") || "");
             const hasAdjustments = (doc.documentName === "Actor" ? !!doc.getFlag("3d-to-iso", "adjustments") : !!targetDoc.getFlag("3d-to-iso", "adjustments")) || (actor ? !!actor.getFlag("3d-to-iso", "adjustments") : false);
 
@@ -178,70 +181,70 @@ export const integrate3DToIso = (ConfigClass) => {
                 event.preventDefault();
                 if (!hasId) return ui.notifications.error("Please finish creating the document before attempting to assign iso sprites to it");
                 
-                const targetFlagDoc = (doc.documentName === "Tile") ? doc : actor; 
-
+                // Atomic Update Workflow
                 new FilePicker({
                     type: "image",
                     callback: async (path) => {
-                        // DIRECT UPDATE WORKFLOW (Atomic state change)
-                        ui.notifications.info("Setting up token facings...");
+                        ui.notifications.info("Scanning and setting up facings...");
 
-                        // 1. Commit the base image path to DB immediately
-                        const srcPath = (doc.documentName === "Actor") ? "prototypeToken.texture.src" : "texture.src";
+                        // 1. Detect Facings (No Commit)
+                        const result = await detectAvailableFacings(doc, path, { commit: false });
                         
-                        await doc.update({ [srcPath]: path });
+                        // 2. Prepare Atomic Update Data
+                        const updateData = {};
+                        const isActor = doc.documentName === "Actor";
+                        
+                        // Flags
+                        updateData["flags.3d-to-iso.modelPath"] = null; // Clear explicit model path
+                        
+                        if (result.found && result.found.length > 0) {
+                            updateData["flags.3d-to-iso.availableFacings"] = result.found;
+                            updateData["flags.3d-to-iso.facingMode"] = result.mode;
+                            updateData["flags.3d-to-iso.enabled"] = true;
+                        } else {
+                            updateData["flags.3d-to-iso.availableFacings"] = null;
+                            updateData["flags.3d-to-iso.facingMode"] = null;
+                        }
 
-                        // 2. Clear flags on target
-                        if (targetFlagDoc) {
-                            await targetFlagDoc.unsetFlag("3d-to-iso", "modelPath");
-                            await targetFlagDoc.unsetFlag("3d-to-iso", "availableFacings");
-                            await targetFlagDoc.unsetFlag("3d-to-iso", "facingMode");
-                            
-                            // 3. Run Detection on the new committed path
-                            // We pass `targetFlagDoc` which is Actor or Tile
-                            const result = await detectAvailableFacings(targetFlagDoc, path);
-                            
-                            // 4. Auto-Select Best Facing 
-                            if (result && result.found && result.found.length > 0) {
-                                let bestFacing = result.found[0];
-                                
-                                if (result.mode === "cardinal") {
-                                    const ne = result.found.find(f => f.toUpperCase() === "NE");
-                                    const s = result.found.find(f => f.toUpperCase() === "S");
-                                    if (ne) bestFacing = ne;
-                                    else if (s) bestFacing = s;
-                                }
-                                
-                                // Construct new path using utility (or locally for immediate use)
-                                // We can use generateGallery to find the path?
-                                // Or we can rely on our knowledge of the path structure.
-                                const cleanSrc = path.split("?")[0];
-                                const lastDot = cleanSrc.lastIndexOf(".");
-                                const ext = cleanSrc.substring(lastDot + 1);
-                                let base = cleanSrc.substring(0, lastDot);
-                                
-                                // Simple strip since we just selected a fresh file
-                                // But if user selected "Token_NE.png", we should strip "NE"
-                                // We can use the parse logic from utils, but we don't have it imported here as a helper?
-                                // Actually we have generateGallery, etc.
-                                // Let's simplify and rely on the filepicker result.
-                                
-                                // Actually, let's just grab the generated gallery item for the best facing
-                                const gallery = generateGallery(result.found, path);
-                                const match = gallery.find(g => g.direction === bestFacing);
-                                
-                                if (match) {
-                                     // Commit the "Best Facing" image
-                                    await doc.update({ 
-                                        [srcPath]: match.src,
-                                        "flags.3d-to-iso.enabled": true 
-                                    });
-                                }
+                        // 3. Determine Best Texture Path
+                        let finalPath = path;
+                        if (result.found && result.found.length > 0) {
+                            // Prefer NE, then S, then first avilable
+                            let bestFacing = result.found[0];
+                            if (result.mode === "cardinal") {
+                                const ne = result.found.find(f => f.toUpperCase() === "NE");
+                                const s = result.found.find(f => f.toUpperCase() === "S");
+                                if (ne) bestFacing = ne;
+                                else if (s) bestFacing = s;
                             }
                             
-                            ui.notifications.info("Setup Complete.");
-                            this.render(); // Force re-render to show new gallery
+                            // Find matching file in gallery logic
+                            const gallery = generateGallery(result.found, path);
+                            const match = gallery.find(g => g.direction === bestFacing);
+                            if (match) finalPath = match.src;
                         }
+
+                        // Texture Key
+                        const srcKey = isActor ? "prototypeToken.texture.src" : "texture.src";
+                        updateData[srcKey] = finalPath;
+                        
+                        // Ensure enabled on prototype if Actor
+                        if (isActor) {
+                            updateData["prototypeToken.flags.3d-to-iso.enabled"] = true;
+                        }
+
+                        // 4. Execute Update
+                        await doc.update(updateData);
+                        
+                        ui.notifications.info(`Setup Complete. Found ${result.found.length} facings.`);
+                        
+                        // Explicitly set pending source so the UI definitely uses the new path,
+                        // avoiding stale data if the document clone hasn't refreshed yet.
+                        this._pendingSrc = finalPath;
+                        this._pendingFacings = result.found;
+                        
+                        // Force re-render just in case
+                        this.render(); 
                     }
                 }).browse();
             });
@@ -250,7 +253,18 @@ export const integrate3DToIso = (ConfigClass) => {
         // Live-update input
         const textureInput = html.querySelector('input[name="texture.src"], input[name="prototypeToken.texture.src"]');
         if (textureInput) {
-            textureInput.addEventListener("change", (event) => {});
+            textureInput.addEventListener("change", async (event) => {
+                const path = event.target.value;
+                if (!path) return;
+                
+                const targetDetect = (doc.documentName === "Tile") ? doc : actor;
+                if (targetDetect) {
+                    const result = await detectAvailableFacings(targetDetect, path, { commit: false });
+                    this._pendingSrc = path;
+                    this._pendingFacings = result.found || [];
+                    this.render();
+                }
+            });
         }
 
         // Auto-detect available facings ONLY IF MISSING

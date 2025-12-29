@@ -81,7 +81,7 @@ export function parsePath(path) {
  * @param {string} currentSrc - The current texture path
  * @returns {Promise<{found: string[], changed: boolean, mode: string}>}
  */
-export async function detectAvailableFacings(doc, currentSrc) {
+export async function detectAvailableFacings(doc, currentSrc, options = { commit: true }) {
     if (!doc || !currentSrc) return { found: [], changed: false, mode: "cardinal" };
 
     const parsed = parsePath(currentSrc);
@@ -178,7 +178,7 @@ export async function detectAvailableFacings(doc, currentSrc) {
                    !found.every((f, i) => f === currentFlags[i]) ||
                    mode !== currentMode;
 
-    if (changed) {
+    if (options.commit && changed) {
         if (found.length > 0) {
              await doc.setFlag("3d-to-iso", "availableFacings", found);
              await doc.setFlag("3d-to-iso", "facingMode", mode);
