@@ -233,6 +233,17 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
+    _disposeHierarchically(object) {
+        if (!object) return;
+        object.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                else child.material.dispose();
+            }
+        });
+    }
+
     async close(options) {
         // Stop animation loop
         if (this.renderer) {
@@ -241,20 +252,12 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
         
         // Traverse and dispose Scene
-        const disposeObject = (obj) => {
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-                if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-                else obj.material.dispose();
-            }
-        };
-
         if (this.scene) {
-            this.scene.traverse(disposeObject);
+            this._disposeHierarchically(this.scene);
             this.scene.clear();
         }
         if (this.overlayScene) {
-            this.overlayScene.traverse(disposeObject);
+            this._disposeHierarchically(this.overlayScene);
             this.overlayScene.clear();
         }
 
@@ -604,6 +607,10 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     async _loadModel(path) {
         if (!path) return;
+        
+        // Dispose old model resources to prevent memory leaks
+        if (this.modelWrapper) this._disposeHierarchically(this.modelWrapper);
+        
         this.modelWrapper.clear();
         this.modelWrapper.scale.set(1, 1, 1);
         this.modelWrapper.rotation.set(0, 0, 0);
@@ -1455,58 +1462,70 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     /* -------------------------------------------- */
 
     _setupPostProcessing(size) {
-        // Dispose old targets
-        if (this.postProcessing.bufferA) this.postProcessing.bufferA.dispose();
-        if (this.postProcessing.bufferB) this.postProcessing.bufferB.dispose();
+        // Recycle existing resources if available
+        const pp = this.postProcessing;
         
-        // Create Double Buffers
-        const params = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
-        this.postProcessing.bufferA = new THREE.WebGLRenderTarget(size, size, params);
-        this.postProcessing.bufferB = new THREE.WebGLRenderTarget(size, size, params);
-        
-        // Setup Post Scene (Single Quad, material swapped per pass)
-        this.postProcessing.scene = new THREE.Scene();
-        this.postProcessing.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        
-        const geom = new THREE.PlaneGeometry(2, 2);
-        
-        // --- Create Materials for each effect ---
-        
-        // 1. Sepia
-        this.postProcessing.materials.sepia = new THREE.ShaderMaterial({
-            vertexShader: POST_VERTEX_SHADER,
-            fragmentShader: SEPIA_FRAGMENT_SHADER,
-            uniforms: {
-                tDiffuse: { value: null },
-                intensity: { value: 0 }
-            }
-        });
+        // 1. Buffers: Resize or Create
+        if (pp.bufferA) {
+             if (pp.bufferA.width !== size || pp.bufferA.height !== size) {
+                 pp.bufferA.setSize(size, size);
+                 pp.bufferB.setSize(size, size);
+             }
+        } else {
+            const params = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
+            pp.bufferA = new THREE.WebGLRenderTarget(size, size, params);
+            pp.bufferB = new THREE.WebGLRenderTarget(size, size, params);
+        }
 
-        // 2. Pixel
-        this.postProcessing.materials.pixel = new THREE.ShaderMaterial({
-            vertexShader: POST_VERTEX_SHADER,
-            fragmentShader: PIXEL_FRAGMENT_SHADER,
-            uniforms: {
-                tDiffuse: { value: null },
-                resolution: { value: new THREE.Vector2(size, size) },
-                intensity: { value: 0 }
-            }
-        });
+        // 2. Scene & Camera: Create Once
+        if (!pp.scene) {
+            pp.scene = new THREE.Scene();
+            pp.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        }
+        
+        // 3. Materials: Create Once
+        if (Object.keys(pp.materials).length === 0) {
+            // Sepia
+            pp.materials.sepia = new THREE.ShaderMaterial({
+                vertexShader: POST_VERTEX_SHADER,
+                fragmentShader: SEPIA_FRAGMENT_SHADER,
+                uniforms: {
+                    tDiffuse: { value: null },
+                    intensity: { value: 0 }
+                }
+            });
 
-        // 3. Sketch
-        this.postProcessing.materials.sketch = new THREE.ShaderMaterial({
-            vertexShader: POST_VERTEX_SHADER,
-            fragmentShader: SKETCH_FRAGMENT_SHADER,
-            uniforms: {
-                tDiffuse: { value: null },
-                resolution: { value: new THREE.Vector2(size, size) },
-                intensity: { value: 0 }
-            }
-        });
+            // Pixel
+            pp.materials.pixel = new THREE.ShaderMaterial({
+                vertexShader: POST_VERTEX_SHADER,
+                fragmentShader: PIXEL_FRAGMENT_SHADER,
+                uniforms: {
+                    tDiffuse: { value: null },
+                    resolution: { value: new THREE.Vector2(size, size) },
+                    intensity: { value: 0 }
+                }
+            });
 
-        // Quad gets a dummy material initially
-        this.postProcessing.quad = new THREE.Mesh(geom, this.postProcessing.materials.sepia); 
-        this.postProcessing.scene.add(this.postProcessing.quad);
+            // Sketch
+            pp.materials.sketch = new THREE.ShaderMaterial({
+                vertexShader: POST_VERTEX_SHADER,
+                fragmentShader: SKETCH_FRAGMENT_SHADER,
+                uniforms: {
+                    tDiffuse: { value: null },
+                    resolution: { value: new THREE.Vector2(size, size) },
+                    intensity: { value: 0 }
+                }
+            });
+            
+            // Quad Setup
+            const geom = new THREE.PlaneGeometry(2, 2);
+            pp.quad = new THREE.Mesh(geom, pp.materials.sepia); 
+            pp.scene.add(pp.quad);
+        } else {
+            // Update Uniforms for existing materials (Resolution changed?)
+            if (pp.materials.pixel) pp.materials.pixel.uniforms.resolution.value.set(size, size);
+            if (pp.materials.sketch) pp.materials.sketch.uniforms.resolution.value.set(size, size);
+        }
     }
 
     /* -------------------------------------------- */
