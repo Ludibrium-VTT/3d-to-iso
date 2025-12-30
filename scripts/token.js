@@ -42,7 +42,9 @@ export const integrate3DToIso = (ConfigClass) => {
     const originalPreparePartContext = ConfigClass.prototype._preparePartContext;
     ConfigClass.prototype._preparePartContext = async function(partId, context, options) {
         if (partId === "isometricModel") {
-            const doc = this.document;
+            const doc = this.document || this.object;
+            if (!doc) return originalPreparePartContext.call(this, partId, context, options);
+
             let actor = this.actor;
             if (!actor && doc) {
                 if (doc.documentName === "Actor") actor = doc;
@@ -100,7 +102,7 @@ export const integrate3DToIso = (ConfigClass) => {
         const html = this.element;
         const btn = html.querySelector(".open-3d-renderer");
         if (btn) {
-            const doc = this.document;
+            const doc = this.document || this.object;
             // Refined Actor Resolution: Ensure we don't pick up Scene as parent
             let actor = this.actor;
             if (!actor && doc) {
@@ -110,7 +112,7 @@ export const integrate3DToIso = (ConfigClass) => {
             }
             
             // Allow if Tile has ID OR if there is an Actor (for Prototype Token) which has ID
-            const hasId = (doc.id) || (actor && actor.id);
+            const hasId = (doc?.id) || (actor && actor.id);
             
             if (!hasId) {
                  btn.disabled = true;
@@ -124,7 +126,7 @@ export const integrate3DToIso = (ConfigClass) => {
                 event.preventDefault();
                 if (!hasId) return ui.notifications.error("Please finish creating the document before attempting to assign iso sprites to it");
                 
-                if (doc.documentName === "Tile") {
+                if (doc?.documentName === "Tile") {
                       const { IsometricRenderer } = game.modules.get("3d-to-iso").api;
                       new IsometricRenderer({ tile: doc }).render(true);
                       return;
@@ -160,7 +162,7 @@ export const integrate3DToIso = (ConfigClass) => {
         // New: Setup Facings from Image Button Logic
         const selectImgBtn = html.querySelector(".select-token-image");
         if (selectImgBtn) {
-            const doc = this.document;
+            const doc = this.document || this.object;
             let actor = this.actor;
             if (!actor && doc) {
                 if (doc.documentName === "Actor") actor = doc;
@@ -168,7 +170,7 @@ export const integrate3DToIso = (ConfigClass) => {
                 else if (doc.parent && doc.parent.documentName === "Actor") actor = doc.parent;
             }
             
-            const hasId = (doc.id) || (actor && actor.id);
+            const hasId = (doc?.id) || (actor && actor.id);
             if (!hasId) {
                  selectImgBtn.disabled = true;
                  selectImgBtn.style.opacity = "0.5";
@@ -188,11 +190,15 @@ export const integrate3DToIso = (ConfigClass) => {
                         ui.notifications.info("Scanning and setting up facings...");
 
                         // 1. Detect Facings (No Commit)
-                        const result = await detectAvailableFacings(doc, path, { commit: false });
+                        // Use actor if doc is missing (Prototype Token scenario)
+                        const targetDetect = (doc?.documentName === "Tile") ? doc : actor;
+                         if (!targetDetect) return; // Should be handled by hasId, but safe
+                         
+                        const result = await detectAvailableFacings(targetDetect, path, { commit: false });
                         
                         // 2. Prepare Atomic Update Data
                         const updateData = {};
-                        const isActor = doc.documentName === "Actor";
+                        const isActor = doc?.documentName === "Actor" || !doc; // If no doc, assume actor prototype
                         
                         // Flags
                         updateData["flags.3d-to-iso.modelPath"] = null; // Clear explicit model path
@@ -234,7 +240,8 @@ export const integrate3DToIso = (ConfigClass) => {
                         }
 
                         // 4. Execute Update
-                        await doc.update(updateData);
+                        if (doc) await doc.update(updateData);
+                        else if (actor) await actor.update(updateData);
                         
                         ui.notifications.info(`Setup Complete. Found ${result.found.length} facings.`);
                         
@@ -257,7 +264,7 @@ export const integrate3DToIso = (ConfigClass) => {
                 const path = event.target.value;
                 if (!path) return;
                 
-                const targetDetect = (doc.documentName === "Tile") ? doc : actor;
+                const targetDetect = (doc?.documentName === "Tile") ? doc : actor;
                 if (targetDetect) {
                     const result = await detectAvailableFacings(targetDetect, path, { commit: false });
                     this._pendingSrc = path;
@@ -268,7 +275,8 @@ export const integrate3DToIso = (ConfigClass) => {
         }
 
         // Auto-detect available facings ONLY IF MISSING
-        const doc = this.document;
+        const doc = this.document || this.object;
+        if (!doc) return;
         const actor = this.actor || (doc?.documentName === "Actor" ? doc : doc?.actor || doc?.parent);
         const targetDetect = (doc.documentName === "Tile") ? doc : actor;
         
