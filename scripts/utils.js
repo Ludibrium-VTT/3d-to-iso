@@ -2,6 +2,8 @@
  * Shared utility functions for 3D to Isometric module.
  * Centralizes logic for asset detection, string parsing, and rotation mapping.
  */
+// V13 Compatibility: Resolve FilePicker implementation
+const FilePickerApp = foundry.applications?.apps?.FilePicker?.implementation;
 
 export const CARDINALS_8 = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
 export const CARDINALS_16 = [
@@ -75,121 +77,133 @@ export function parsePath(path) {
 }
 
 /**
+ * Helper to probe image existence if browsing fails.
+ */
+async function checkImageExists(url) {
+    try {
+        const res = await fetch(url, { method: "HEAD" });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
  * Probes the server to see which directional facings exist for a given base texture.
- * Implements strict mode: if currentSrc implies a specific mode, it only looks for that mode.
+ * Utilizes FilePicker.browse to avoid 404 console errors.
  * @param {Document} doc - Actor or Tile document (for logging/flags context)
  * @param {string} currentSrc - The current texture path
- * @returns {Promise<{found: string[], changed: boolean, mode: string}>}
+ * @returns {Promise<string[]>}
  */
 export async function detectAvailableFacings(doc, currentSrc, options = { commit: true }) {
-    if (!doc || !currentSrc) return { found: [], changed: false, mode: "cardinal" };
+    if (!currentSrc) return [];
 
     const parsed = parsePath(currentSrc);
-    if (!parsed) return { found: [], changed: false, mode: "cardinal" };
+    if (!parsed) return [];
 
-    // Strict Mode Determination
-    let targetMode = null; // null = auto/both
-    if (parsed.isCardinal) targetMode = "cardinal";
-    if (parsed.isNumeric) targetMode = "numeric";
-
-    // Debug Log
-    // console.log(`3d-to-iso | Detect ${parsed.fileName} -> Mode: ${targetMode || "Auto"} (Suffix: ${parsed.suffix})`);
-
-    // Parent Directory Resolution
+    // 1. Sanitize Path
     let parentDir = "";
     const lastSlash = parsed.base.lastIndexOf("/");
+    // parsed.base includes the directory path structure, we want the folder.
     if (lastSlash > -1) {
         parentDir = parsed.base.substring(0, lastSlash);
     }
+    
+    // Explicitly handle URL origins if they leaked into parsed.base or original src
+    try {
+        if (currentSrc.startsWith("http") || currentSrc.startsWith("//")) {
+             const urlObj = new URL(currentSrc, window.location.href);
+             let cleanPath = decodeURIComponent(urlObj.pathname);
+             // Strip leading slash
+             if (cleanPath.startsWith("/")) cleanPath = cleanPath.substring(1);
+             // Split to get dir
+             const ls = cleanPath.lastIndexOf("/");
+             if (ls > -1) parentDir = cleanPath.substring(0, ls);
+             else parentDir = "";
+        }
+    } catch(e) {}
 
-    // Base Filename for matching
-    // parsed.base is "path/to/token". We need "token" for browsing.
-    const baseName = parsed.base.substring(lastSlash + 1); // decode not needed, parsePath decoded it
+    const baseName = parsed.base.split("/").pop();
     const ext = parsed.ext;
 
-    const foundCardinals = [];
-    const foundNumbers = [];
+    // Strict Mode: Match the mode of the source image
+    let targetMode = null;
+    if (parsed.isNumeric) targetMode = "numeric";
+    else if (parsed.isCardinal) targetMode = "cardinal";
+
+    const foundFacings = new Set();
+    let detectedMode = targetMode || "cardinal"; // Default
 
     try {
-        const result = await FilePicker.browse("data", parentDir);
+        const result = await FilePickerApp.browse("data", parentDir);
         const files = result.files || [];
 
+        // 2. Filter & Identify
         for (const file of files) {
             const decodedFile = decodeURIComponent(file);
             const fileName = decodedFile.split("/").pop();
 
-            // Must check base name match
+            // A. Check Base Name prefix
             if (!fileName.startsWith(baseName + "_")) continue;
-            // Check extension (last dot)
+
+            // B. Check Extension
             if (!fileName.toLowerCase().endsWith("." + ext.toLowerCase())) continue;
 
-            // Extract Suffix
-            const fileSuffix = fileName.substring(baseName.length + 1, fileName.length - (ext.length + 1));
+            // C. Extract Suffix
+            const suffix = fileName.substring(baseName.length + 1, fileName.length - (ext.length + 1));
 
-            // Check Cardinal
-            if (CARDINALS_16.includes(fileSuffix.toUpperCase())) {
-                if (targetMode === "numeric") continue; // Strict Mode Ignore
-                foundCardinals.push(fileSuffix.toUpperCase());
+            // D. Classify Suffix
+            const suffixUpper = suffix.toUpperCase();
+            let fileMode = null;
+            
+            // Is it a known Cardinal?
+            if (CARDINALS_16.includes(suffixUpper)) {
+                fileMode = "cardinal";
             } 
-            // Check Numeric
-            else if (/^\d{1,4}$/.test(fileSuffix)) {
-                if (targetMode === "cardinal") continue; // Strict Mode Ignore
-                foundNumbers.push(fileSuffix);
+            // Is it Numeric?
+            else if (/^\d{1,4}$/.test(suffix)) {
+                 fileMode = "numeric";
             }
+
+            if (!fileMode) continue;
+
+            // Strict Filter: If we know the source mode, Ignore files of other modes
+            if (targetMode && fileMode !== targetMode) continue;
+
+            foundFacings.add(fileMode === "cardinal" ? suffixUpper : suffix);
+            
+            // If we didn't have a target mode (source was plain), we infer from what we find.
+            // Priority: If we find numeric, switch to numeric? Or keep default?
+            // Usually plain base -> Cardinal is safer default, but if only numeric exist...
+            if (!targetMode) detectedMode = fileMode;
         }
 
     } catch (e) {
-        console.warn("3D-to-ISO | Failed to browse directory for facings:", e);
+        console.warn("3D-to-ISO | Failed to browse directory:", e);
     }
 
-    let found = [];
-    let mode = "cardinal";
+    const found = Array.from(foundFacings);
 
-    // Decision Logic
-    if (targetMode === "cardinal") {
-        found = foundCardinals;
-        mode = "cardinal";
-    } else if (targetMode === "numeric") {
-        found = foundNumbers;
-        mode = "numeric";
+    // Sort
+    if (found.some(f => /^\d+$/.test(f))) {
+         found.sort((a, b) => parseInt(a) - parseInt(b));
     } else {
-        // Fallback Priority: Cardinal > Numeric
-        if (foundCardinals.length > 0) {
-            found = foundCardinals;
-            mode = "cardinal";
-        } else if (foundNumbers.length > 0) {
-            found = foundNumbers;
-            mode = "numeric";
-        }
+         found.sort((a,b) => CARDINALS_16.indexOf(a) - CARDINALS_16.indexOf(b));
     }
 
-    // Sorting
-    if (mode === "numeric") {
-        found.sort((a, b) => parseInt(a) - parseInt(b)); // Sort numerically
-    } else {
-        found.sort((a, b) => CARDINALS_16.indexOf(a) - CARDINALS_16.indexOf(b));
-    }
+    // Commit
+    if (options.commit && doc) {
+        const existing = doc.getFlag("3d-to-iso", "availableFacings") || [];
+        const changed = existing.length !== found.length || !found.every(f => existing.includes(f));
 
-    // Update Flags
-    const currentFlags = doc.getFlag("3d-to-iso", "availableFacings") || [];
-    const currentMode = doc.getFlag("3d-to-iso", "facingMode") || "cardinal";
-
-    const changed = found.length !== currentFlags.length || 
-                   !found.every((f, i) => f === currentFlags[i]) ||
-                   mode !== currentMode;
-
-    if (options.commit && changed) {
-        if (found.length > 0) {
-             await doc.setFlag("3d-to-iso", "availableFacings", found);
-             await doc.setFlag("3d-to-iso", "facingMode", mode);
-             console.log(`3d-to-iso | Detected ${found.length} facings (${mode}) for ${doc.name || doc.id}`);
-        } else {
-             await doc.unsetFlag("3d-to-iso", "availableFacings");
-             await doc.unsetFlag("3d-to-iso", "facingMode");
+        if (changed) {
+            await doc.setFlag("3d-to-iso", "availableFacings", found);
+            await doc.setFlag("3d-to-iso", "facingMode", detectedMode);
+            console.log(`3d-to-iso | Discovered ${found.length} facings in ${parentDir} (Mode: ${detectedMode})`);
         }
     }
     
-    return { found, changed, mode };
+    return { found };
 }
 
 /**

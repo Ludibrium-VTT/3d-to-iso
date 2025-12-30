@@ -11,7 +11,7 @@ Hooks.once("ready", () => {
     if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
 
     // If TileConfig is an ApplicationV2, integrate it properly
-    if (foundry.applications.sheets.TileConfig) {
+    if (foundry.applications.sheets?.TileConfig) {
         integrate3DToIso(foundry.applications.sheets.TileConfig);
     }
 });

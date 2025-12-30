@@ -1,5 +1,9 @@
 import { TransformControls } from "../vendor/TransformControls.js";
+import { integrate3DToIso } from "./token.js";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+// V13 Compatibility: Resolve FilePicker implementation
+const FilePickerApp = foundry.applications?.apps?.FilePicker?.implementation;
 
 /* -------------------------------------------- */
 /*  Shaders                                     */
@@ -863,7 +867,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const browseModelBtn = html.querySelector(".browse-model-btn");
         if (browseModelBtn) {
             browseModelBtn.addEventListener("click", () => {
-                 const fp = new FilePicker({
+                 const fp = new FilePickerApp({
                     displayMode: "list",
                     callback: async (path) => {
                         this.modelPath = path;
@@ -1039,14 +1043,80 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         
         const file = new File([blob], filename, { type: "image/webp" });
 
+        // Preemptive Directory Check
+        if (!this._checkedPaths) this._checkedPaths = new Set();
+        
+        // Only check if not already verified (optimizes batch render)
+        if (!this._checkedPaths.has(uploadDir)) {
+            try {
+                // Check if directory exists
+                await FilePickerApp.browse("data", uploadDir);
+                this._checkedPaths.add(uploadDir);
+            } catch (err) {
+                // Directory does not exist (or inaccessible)
+                // Initialize approved paths set if missing
+                if (!this._approvedCreatePaths) this._approvedCreatePaths = new Set();
+
+                // Check if we already approved this path to avoid spamming dialogs
+                if (!this._approvedCreatePaths.has(uploadDir)) {
+                     const confirmed = await new Promise(resolve => {
+                         Dialog.confirm({
+                             title: "Create Directory?",
+                             content: `<p>The directory <code>${uploadDir}</code> does not exist.</p><p>Would you like 3D to Isometric to create it?</p>`,
+                             yes: () => resolve(true),
+                             no: () => resolve(false),
+                             defaultYes: true
+                         });
+                     });
+                     
+                     if (!confirmed) {
+                         ui.notifications.warn("Upload cancelled by user.");
+                         return null;
+                     }
+                     this._approvedCreatePaths.add(uploadDir);
+                }
+
+                // Create Logic
+                try {
+                    await this._ensureRecursiveDirectory("data", uploadDir);
+                    this._checkedPaths.add(uploadDir); // Now it exists
+                } catch (err2) {
+                    console.error("3D-to-Iso | Directory creation failed:", err2);
+                    ui.notifications.error(`Could not create directory '${uploadDir}'.`);
+                    return null;
+                }
+            }
+        }
+
+        // Perform Upload
         try {
-            const response = await FilePicker.upload("data", uploadDir, file, {}, { notify: false });
-            const actualPath = typeof response === "string" ? response : response.path;
+            const response = await FilePickerApp.upload("data", uploadDir, file, {}, { notify: false });
             
-            return actualPath;
+            // Validate Response
+            if (!response || (!response.path && typeof response !== "string")) {
+                 throw new Error(response ? "Invalid Response" : "Upload failed (Silent/Optimized)");
+            }
+
+            return typeof response === "string" ? response : response.path;
         } catch (err) {
-            ui.notifications.error(`Upload failed: ${err.message}. Make sure the target directory exists.`);
-            return null;
+             console.error("3D-to-Iso | Upload Error:", err);
+             ui.notifications.error(`Upload failed: ${err.message}`);
+             return null;
+        }
+    }
+
+    async _ensureRecursiveDirectory(source, path) {
+        const parts = path.split(/[\\/]/).filter(p => p);
+        let current = "";
+        
+        for (const part of parts) {
+            current = current ? `${current}/${part}` : part;
+            try {
+                // Try create. If it fails (exists), we continue.
+                await FilePickerApp.createDirectory(source, current);
+            } catch (err) {
+                // Suppress error, assume existence or permission issue that next step will catch if critical
+            }
         }
     }
 
