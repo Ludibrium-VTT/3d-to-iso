@@ -29,8 +29,7 @@ Before using the module, please configure the global settings in **Game Settings
 1. Open the **Token Configuration** (or Prototype Token Config).
 2. Navigate to the **Iso3D** tab.
 3. Click **"Open 3D Renderer"**.
-4. Select a 3D model using the file picker.
-   > **Note**: The file picker is unrestricted to allow you to preview related images (like concept art or thumbnails) in the same folder. However, you must select valid **`.glb`** or **`.gltf`** files. Selecting other file types will result in an error.
+4. Select a 3D model using the file picker (or the asset browser if you have 3D Canvas Token Collection installed).
 5. Adjust the model's orientation, lighting, and style settings.
 6. Click **"Process and Assign"**. The module will automatically generate sprites for all directions and assign them to the token.
 
@@ -94,6 +93,22 @@ It is highly recommended to install this module alongside the following asset li
 - **[3D Canvas Mapmaking Collection](https://foundryvtt.com/packages/canvas3dcompendium)**: A wide variety of environment and prop assets.
 
 If you're using the 3D Canvas assets, make sure that your use is permitted by the [licenses](https://wiki.theripper93.com/levels-3d-preview/canvas3dcompendium#licensecredits) for the various assets you are using.
+
+The module automatically integrates with these libraries, providing a unified **Asset Browser** that intelligently displays Tokens or Map Assets depending on whether you are editing a Token or a Tile.
+
+## Troubleshooting
+
+### I can't click on my token after rotating it!
+This is a known interaction issue in Foundry VTT when a token's image is updated.
+**Fix**: Simply move your mouse off the token and then back onto it. This forces Foundry to re-calculate the hit area.
+
+### The Renderer crashed / Screen went black
+Rendering high-resolution 3D models can be intensive. If you are generating many assets in quick succession, you may overwhelm the browser's WebGL context.
+**Fix**: If a crash occurs, refresh your browser page to reset the WebGL context. The module will keep getting updated to improve stability on this one over time.
+
+### Old sprites are showing up for some angles
+If you re-generate an asset and save it over an existing file, the browser might cache the old images.
+**Fix**: Clear your browser cache or try a hard refresh (Ctrl+F5) to see the updated sprites.
 
 ## Planned Features
 - **Scene Lighting Baking**: Future updates aim to allow baking scene lighting directly into the isometric tiles, enabling assets to settle perfectly into the environment's illumination.
