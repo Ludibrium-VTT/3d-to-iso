@@ -617,6 +617,28 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this.currentModel = gltf.scene;
             this.modelWrapper.add(this.currentModel);
 
+            // Sanitize Materials: Ensure all models react to lighting (Miniature Style)
+            // Metallic materials appear black without an Environment Map.
+            // We force them to be non-metallic (Diffuse) so they react to Ambient/Directional lights.
+            this.currentModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        for (let mat of materials) {
+                            if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
+                                // Clamp Metalness to 0 to ensure response to Ambient Light
+                                if (mat.metalness > 0) mat.metalness = 0;
+                                // Ideally ensure some roughness to prevent super-sharp speculars on plastic
+                                if (mat.roughness < 0.4) mat.roughness = 0.4;
+                            }
+                        }
+                    }
+                }
+            });
+
             // Compute precise bounding box including all children
             this.currentModel.updateMatrixWorld(true);
             const box = new THREE.Box3().setFromObject(this.modelWrapper);
