@@ -40,6 +40,7 @@
     "AssignToActor": "Process & Assign to Token",
     "ProcessAndAssign": "Process & Assign",
     "TargetActor": "Target Actor: {name}",
+    "SetPivot": "Set Pivot Point",
     "Set3DModel": "Iso3D",
     "Enable3D": "Enable 3D Isometric",
     "Enable3DNotes": "Check this to enable automatic rotation for this token, even when using external assets like Hero Forge.",

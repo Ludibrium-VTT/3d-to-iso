@@ -272,6 +272,11 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this.transformControl.dispose();
         }
 
+        if (this.assetBrowser) {
+            this.assetBrowser.close();
+            this.assetBrowser = null;
+        }
+
         this.renderer = null;
         this.scene = null;
         this.camera = null;
@@ -1047,8 +1052,42 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     BrowserClass = IsometricRenderer.TokenBrowser;
                  }
                  
-                 // Instantiate and Render (Clean instance every time)
-                 new BrowserClass(proxyInput, this).render(true);
+                 // Instantiate and Render
+                 this.assetBrowser = new BrowserClass(proxyInput, this);
+                 
+                 // Calculate Position (Adjacent to Renderer)
+                 const rect = this.element.getBoundingClientRect();
+                 const browserWidth = 450; // Approx width of browser
+                 
+                 // Default to Right side
+                 let targetLeft = rect.right + 10;
+                 
+                 // If not enough space on right, try left
+                 if (targetLeft + browserWidth > window.innerWidth) {
+                     targetLeft = rect.left - browserWidth - 10;
+                 }
+                 
+                 // Render first
+                 const p = this.assetBrowser.render(true);
+                 
+                 // Then Force Position (Handles both Sync and Async renders)
+                 const applyPos = () => {
+                     if (this.assetBrowser.setPosition) {
+                         this.assetBrowser.setPosition({ left: targetLeft, top: rect.top });
+                     } else {
+                         // Fallback for weird App types or props
+                         if (this.assetBrowser.element && this.assetBrowser.element.length > 0) {
+                             // jQuery object
+                             this.assetBrowser.element.css({ left: targetLeft, top: rect.top });
+                         } else if (this.assetBrowser.element instanceof HTMLElement) {
+                             this.assetBrowser.element.style.left = `${targetLeft}px`;
+                             this.assetBrowser.element.style.top = `${rect.top}px`;
+                         }
+                     }
+                 };
+
+                 if (p instanceof Promise) p.then(applyPos);
+                 else applyPos();
              });
         }
     }

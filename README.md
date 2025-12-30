@@ -39,6 +39,14 @@ Before using the module, please configure the global settings in **Game Settings
 3. Go to the **Iso3D** tab and follow the same rendering process.
 4. The Tile will now rotate visually when its rotation property is changed!
 
+### Adjusting the Pivot Point
+Sometimes a 3D model's origin point is not at its feet, causing it to "wobble" or float off-center when rotated isometrically. Use the **Pivot Tool** to fix this:
+1. Click the **Set Pivot** button (Crosshair icon) in the renderer toolbar.
+2. The view will switch to a top-down alignment and the model will reset to neutral rotation.
+3. A draggable **Pivot Handle** will appear at the center of the screen.
+4. Drag the handle to the location on the model that should be the center (usually between the feet).
+5. Click the **Set Pivot** button again to confirm. The model will now rotate around this new point.
+
 ## Standalone Usage
 If you prefer not to have `3d-to-iso` manage your token art automatically (or if you have disabled "Enable Rotation & Management Utils" in settings), you can still use the renderer to generate assets.
 
