@@ -190,7 +190,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         // Safe fallback if the specific adjustment is missing (e.g. malformed saved data or switching modes)
         if (!adj) {
-            adj = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
+            adj = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0, center: {x: 0, z: 0} };
             // Auto-repair internal state
             if (this.renderMode === "numeric") this.adjustments.numeric = adj;
             else this.adjustments[this.facing] = adj;
@@ -491,6 +491,15 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
     _updateCameraRotation() {
         if (!this.camera) return;
 
+        // In Pivot Mode, we manually control the camera. 
+        // Only update the model offset based on the temp pivot.
+        if (this._pickingPivot) {
+            if (this.currentModel && this._tempCenter) {
+                this.currentModel.position.set(-this._tempCenter.x, 0, -this._tempCenter.z);
+            }
+            return;
+        }
+
         // Resolve active adjustment set
         let adj = (this.renderMode === "numeric") 
             ? this.adjustments.numeric 
@@ -578,6 +587,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this.modelPivot.position.addScaledVector(right, adj.px);
             this.modelPivot.position.addScaledVector(up, adj.py);
         }
+
+        // Apply Pivot Offset (Center of Rotation)
+        if (this.currentModel) {
+            const base = this._baseModelPosition || new THREE.Vector3(0, 0, 0);
+            const c = (this._pickingPivot && this._tempCenter) ? this._tempCenter : (adj.center || {x: 0, z: 0});
+            this.currentModel.position.copy(base).sub(new THREE.Vector3(c.x, 0, c.z));
+        }
     }
 
     /* -------------------------------------------- */
@@ -608,6 +624,9 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
             // Shift currentModel within modelWrapper so the center of its geometry is at (0,0,0)
             this.currentModel.position.sub(center);
+            
+            // Store the "Visual Center" position to use as base for pivot offsets
+            this._baseModelPosition = this.currentModel.position.clone();
 
             // Auto-scale modelWrapper to fit comfortably in ortho view
             const maxDim = Math.max(size.x, size.y, size.z);
@@ -638,6 +657,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
     }
 
+    _syncCenter(newCenter) {
+        for (let f in this.adjustments) {
+            if (this.adjustments[f]) {
+                 this.adjustments[f].center = { x: newCenter.x, z: newCenter.z };
+            }
+        }
+    }
+
     /* -------------------------------------------- */
 
     _attachEventListeners() {
@@ -664,6 +691,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }); 
 
         container.addEventListener("mousedown", (e) => {
+            if (this._pickingPivot) return; // Disable standard drag in pivot mode
             if (e.button === 2) { 
                 isDragging = true;
                 lastMouseX = e.clientX;
@@ -688,6 +716,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         // Mouse Wheel for Zoom
         container.addEventListener("wheel", (e) => {
+            if (this._pickingPivot) return; // Disable zoom in pivot mode
             e.preventDefault();
             const adj = getAdj();
             const delta = e.deltaY > 0 ? 0.9 : 1.1; 
@@ -786,6 +815,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     }
 
                     if (name === "zoom") {
+                         if (this._pickingPivot) return; // Block zoom
                          this._syncZoom(numValue);
                          const display = this.element.querySelector(".display-zoom");
                          if (display) display.textContent = `${numValue.toFixed(1)}x`;
@@ -818,6 +848,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                         if (labelValue) labelValue.textContent = `- ${numValue}`;
                         return;
                     } else if (["rx", "ry", "rz"].includes(name)) {
+                         if (this._pickingPivot) return; // Block rotation
                          if (this.linkRotations) this._syncRotation(name, numValue);
                          else getAdj()[name] = numValue;
                          this._updateLabel(el, name, numValue);
@@ -853,17 +884,23 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             assignBtn.addEventListener("click", () => this._onProcessAndAssign());
         }
 
+        const pivotBtn = html.querySelector(".set-pivot-btn");
+        if (pivotBtn) {
+            pivotBtn.addEventListener("click", () => this._onTogglePivotMode());
+        }
+
         html.querySelector(".reset-current-btn").addEventListener("click", () => {
             const adj = getAdj();
             const currentZoom = adj.zoom;
             // Reset values in place
             adj.rx = 0; adj.ry = 0; adj.rz = 0; adj.px = 0; adj.py = 0; adj.zoom = currentZoom;
+            if(adj.center) { adj.center.x = 0; adj.center.z = 0; }
             this._updateCameraRotation();
             this.render();
         });
         html.querySelector(".reset-all-btn").addEventListener("click", () => {
             for (let f in this.adjustments) {
-                this.adjustments[f] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0 };
+                this.adjustments[f] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0, center: {x: 0, z: 0} };
             }
             this._updateCameraRotation();
             this.render();
@@ -1011,6 +1048,108 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             ui.notifications.error(`Upload failed: ${err.message}. Make sure the target directory exists.`);
             return null;
         }
+    }
+
+    /* -------------------------------------------- */
+
+    /* -------------------------------------------- */
+    /*  Pivot Tool                                   */
+    /* -------------------------------------------- */
+
+    _onTogglePivotMode() {
+        this._pickingPivot = !this._pickingPivot;
+        const btn = this.element.querySelector(".set-pivot-btn");
+        const handle = this.element.querySelector(".pivot-handle");
+        
+        if (this._pickingPivot) {
+            if (btn) btn.classList.add("active");
+            if (handle) handle.style.display = "flex";
+            
+            // Switch to Bottom View: (0, -100, 0) looking at Origin
+            // Z is UP in screen space relative to this cam (Up Vector 0,0,1)
+            this.camera.position.set(0, -100, 0);
+            this.camera.up.set(0, 0, 1);
+            this.camera.lookAt(0, 0, 0);
+            this.camera.zoom = 1.0; 
+            this.camera.updateProjectionMatrix();
+            
+            // Flatten Model for easy pivoting
+            if (this.modelWrapper) this.modelWrapper.rotation.set(0, 0, 0);
+            
+            // Init Drag
+            this._initPivotDrag(handle);
+            this._tempCenter = null;
+            
+        } else {
+            if (btn) btn.classList.remove("active");
+            if (handle) handle.style.display = "none";
+            
+            // Reset temp state
+            this._tempCenter = null;
+            
+            // Restore Camera (handled by standard update)
+            this._updateCameraRotation();
+        }
+        this._drawThreeJSFrame();
+    }
+
+    _initPivotDrag(handle) {
+        if (this._pivotDragInitialized) return;
+        this._pivotDragInitialized = true;
+        
+        let isDragging = false;
+        let startX, startY;
+        
+        handle.addEventListener("mousedown", (e) => {
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            e.stopPropagation();
+            e.preventDefault();
+            
+            // Initialize temp center from current saved center
+            const adj = (this.renderMode === "numeric") ? this.adjustments.numeric : this.adjustments[this.facing];
+            if (!this._tempCenter) this._tempCenter = { x: adj.center?.x || 0, z: adj.center?.z || 0 };
+        });
+        
+        window.addEventListener("mousemove", (e) => {
+            if (!isDragging || !this._pickingPivot) return;
+            
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            // Convert pixels to world units
+            // Frustum Height = 10 (d=5). 
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            const scale = 10 / rect.height; // Zoom is 1.0 in this mode
+            
+            const worldDx = dx * scale;
+            const worldDz = -dy * scale; // Screen Down is -Z
+            
+            // Update Temp Center
+            this._tempCenter.x += worldDx;
+            this._tempCenter.z += worldDz;
+            
+            // Update Scene (offsets model)
+            if (this.currentModel) {
+                 const base = this._baseModelPosition || new THREE.Vector3(0, 0, 0);
+                 this.currentModel.position.copy(base).sub(new THREE.Vector3(this._tempCenter.x, 0, this._tempCenter.z));
+            }
+            this._drawThreeJSFrame();
+        });
+        
+        window.addEventListener("mouseup", () => {
+            if (isDragging) {
+                isDragging = false;
+                // Commit changes
+                const adj = (this.renderMode === "numeric") ? this.adjustments.numeric : this.adjustments[this.facing];
+                if (this._tempCenter) {
+                    this._syncCenter(this._tempCenter);
+                }
+            }
+        });
     }
 
     /* -------------------------------------------- */

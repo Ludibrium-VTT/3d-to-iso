@@ -11,6 +11,9 @@
             <div class="hud-item"><span class="label">Z:</span> <span class="value display-rz">{{displayValues.rz}}°</span></div>
             <div class="hud-item"><span class="label">Zoom:</span> <span class="value display-zoom">{{displayValues.zoom}}x</span></div>
         </div>
+        <div class="pivot-handle" style="display: none;">
+            <i class="fas fa-crosshairs"></i>
+        </div>
     </div>
 
     <div class="controls">
@@ -145,6 +148,7 @@
 
 
         <div class="form-group reset-buttons">
+            <button type="button" class="set-pivot-btn"><i class="fas fa-crosshairs"></i> {{localize "3D_TO_ISO.SetPivot"}}</button>
             <button type="button" class="reset-current-btn"><i class="fas fa-undo"></i> {{localize "3D_TO_ISO.ResetCurrent"}}</button>
             <button type="button" class="reset-all-btn"><i class="fas fa-trash-restore"></i> {{localize "3D_TO_ISO.ResetAll"}}</button>
         </div>

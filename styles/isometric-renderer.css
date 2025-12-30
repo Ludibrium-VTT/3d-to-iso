@@ -193,26 +193,26 @@
 /* NEW: Vertical Zoom Slider & HUD */
 .isometric-renderer-app .zoom-slider-container {
     position: absolute;
-    right: 10px; /* Moves to right side */
+    right: 10px;
     top: 50%;
     transform: translateY(-50%);
-    height: 60%; /* Slightly smaller */
+    height: 60%;
     display: flex;
-    flex-direction: column; /* Icon above slider */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     z-index: 10;
     background: rgba(0, 0, 0, 0.5);
     border-radius: 20px;
     padding: 10px 5px;
-    gap: 5px; 
+    gap: 5px;
 }
 
 .isometric-renderer-app .zoom-slider-container input[type="range"] {
     writing-mode: bt-lr; /* IE */
     -webkit-appearance: slider-vertical; /* WebKit */
     width: 8px;
-    flex: 1; /* Take remaining height */
+    flex: 1;
     margin: 0;
 }
 
@@ -239,4 +239,34 @@
 .isometric-renderer-app .viewport-hud .hud-item .label {
     opacity: 0.7;
     margin-right: 5px;
+}
+
+/* NEW: Pivot Handle */
+.isometric-renderer-app .pivot-handle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 32px;
+    height: 32px;
+    z-index: 20;
+    cursor: move;
+    color: #ff4444;
+    font-size: 24px;
+    text-shadow: 0 0 5px black;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto; /* Ensure clickable */
+}
+
+.isometric-renderer-app .pivot-handle:hover {
+    color: #ff8888;
+    transform: translate(-50%, -50%) scale(1.1);
+}
+
+.isometric-renderer-app .set-pivot-btn.active {
+    background: #ff4444;
+    color: white;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
 }
