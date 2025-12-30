@@ -19,3 +19,5 @@ yarn-error.log
 .idea/
 *.swp
 *.bak
+
+dist

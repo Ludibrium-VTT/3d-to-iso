@@ -2,7 +2,7 @@
   "id": "3d-to-iso",
   "title": "3D to Isometric",
   "description": "A one-off 3D to static isometric image rendering tool for Foundry VTT.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "authors": [
     {
       "name": "JoshBrodieNZ",
