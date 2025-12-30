@@ -605,7 +605,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
-    async _loadModel(path) {
+    async _loadModel(path, reset = false) {
         if (!path) return;
         
         // Dispose old model resources to prevent memory leaks
@@ -615,6 +615,11 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.modelWrapper.scale.set(1, 1, 1);
         this.modelWrapper.rotation.set(0, 0, 0);
         this.modelWrapper.position.set(0, 0, 0);
+
+        if (reset) {
+            this._resetAdjustments();
+            this.render(); // Update UI sliders
+        }
 
         try {
             const gltf = await new Promise((resolve, reject) => {
@@ -674,6 +679,17 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
     }
     
+    /**
+     * Reset all adjustments to default
+     */
+    _resetAdjustments() {
+        for (let f in this.adjustments) {
+            this.adjustments[f] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0, center: {x: 0, z: 0} };
+        }
+        // Also resets temp pivot state
+        this._tempCenter = null;
+    }
+
     /**
      * Synchronize zoom across all facings
      * @param {number} newZoom 
@@ -823,7 +839,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     }
                 } else {
                     this[name] = value;
-                    if (name === "modelPath") await this._loadModel(value);
+                    if (name === "modelPath") await this._loadModel(value, true);
                     if (name === "facing") this.render();
                 }
             });
@@ -901,7 +917,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     callback: async (path) => {
                         this.modelPath = path;
                         html.querySelector('input[name="modelPath"]').value = path;
-                        await this._loadModel(path);
+                        await this._loadModel(path, true);
                     }
                 });
                 fp.extensions = [".glb", ".gltf"];
@@ -932,9 +948,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this.render();
         });
         html.querySelector(".reset-all-btn").addEventListener("click", () => {
-            for (let f in this.adjustments) {
-                this.adjustments[f] = { rx: 0, ry: 0, rz: 0, zoom: 1, px: 0, py: 0, center: {x: 0, z: 0} };
-            }
+            this._resetAdjustments();
             this._updateCameraRotation();
             this.render();
         });
@@ -1053,7 +1067,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
-    async _onRenderAndSave(target = null, notify = true) {
+    async _onRenderAndSave(target = null, { notify = true, resize = true } = {}) {
         if (!this.currentModel) {
             ui.notifications.warn("No model loaded to render.");
             return;
@@ -1083,13 +1097,18 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         this._updateCameraRotation();
 
-        const targetRes = parseInt(this.resolution);
+        // only resize if explicitly requested (default behavior for single render)
+        // For batch renders, we handle resize in the parent loop to prevent thrashing
         const originalWidth = this.renderer.domElement.width;
         const originalHeight = this.renderer.domElement.height;
 
-        // Resize renderer for high-res render
-        this.renderer.setSize(targetRes, targetRes, false);
-        this._setupPostProcessing(targetRes);
+        if (resize) {
+            const targetRes = parseInt(this.resolution);
+            // Resize renderer for high-res render
+            this.renderer.setSize(targetRes, targetRes, false);
+            this._setupPostProcessing(targetRes);
+        }
+        
         this._drawThreeJSFrame(false);
 
         // Extract WebP
@@ -1097,7 +1116,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const blob = await new Promise(resolve => this.renderer.domElement.toBlob(resolve, 'image/webp', 0.95));
         
         // Restore
-        this.renderer.setSize(originalWidth, originalHeight, false);
+        if (resize) {
+            this.renderer.setSize(originalWidth, originalHeight, false);
+            // We probably should restore PP size too, but next frame/render will handle it or layout update
+            // Ideally:
+             const size = Math.min(this.element.querySelector("#three-container").clientWidth, this.element.querySelector("#three-container").clientHeight) - 20; 
+             this._setupPostProcessing(size);
+        }
+
         this.facing = prevFacing;
         this.currentFrame = prevFrame;
         this._updateCameraRotation();
@@ -1340,6 +1366,15 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         let count = 0;
         const results = {}; 
         
+        // --- PREPARE BATCH RESIZE ---
+        const originalWidth = this.renderer.domElement.width;
+        const originalHeight = this.renderer.domElement.height;
+        const targetRes = parseInt(this.resolution);
+        
+        // Resize context ONCE
+        this.renderer.setSize(targetRes, targetRes, false);
+        this._setupPostProcessing(targetRes);
+
         for (let i = 0; i < targets.length; i++) {
              const t = targets[i];
 
@@ -1361,11 +1396,15 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                  this._waitingForRestore = false;
                  // Allow strict 1 sec for things to settle
                  await new Promise(resolve => setTimeout(resolve, 1000));
+                 
+                 // Re-apply resize if context was lost/restored, just in case
+                 this.renderer.setSize(targetRes, targetRes, false);
+                 this._setupPostProcessing(targetRes);
              }
 
              // 3. Render
-             // Pass notify=false to avoid spam
-             const path = await this._onRenderAndSave(t, false);
+             // Pass notify=false, resize=false (we handled resize)
+             const path = await this._onRenderAndSave(t, { notify: false, resize: false });
              
              // 4. Verify Context Integrity Post-Render
              // If context was lost DURING the render, the result is likely garbage/empty.
@@ -1387,6 +1426,17 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
              // Yield to main thread to prevent context loss from timeout
              // Slightly increased delay to be safer
              await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        
+        // --- RESTORE SIZE ---
+        this.renderer.setSize(originalWidth, originalHeight, false);
+        // Compute preview size (approx) based on container for PP
+        if (this.element) {
+             const container = this.element.querySelector("#three-container");
+             if (container) {
+                 const size = Math.min(container.clientWidth, container.clientHeight) - 20; 
+                 this._setupPostProcessing(size);
+             }
         }
         
         ui.notifications.info(`Render Complete! ${count}/${total} images generated.`);
