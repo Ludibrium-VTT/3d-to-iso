@@ -913,7 +913,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         // Browse 3D Library Button
         const browseBtn = html.querySelector(".browse-3d-btn");
         if (browseBtn && IsometricRenderer.TokenBrowser) {
-             browseBtn.addEventListener("click", () => {
+             browseBtn.addEventListener("click", async () => {
                  const input = html.querySelector('input[name="modelPath"]');
                  // Create a proxy input to trap the value set by TokenBrowser and trigger a change event
                  const proxyInput = {
@@ -927,28 +927,84 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
                  // Context Switching: Tile vs Token
                  const isTile = this.document?.documentName === "Tile";
+                 
                  let BrowserClass = IsometricRenderer.TokenBrowser;
 
+                 // Context Switching: Use a specialized Subclass for Tiles to bypass TokenBrowser's global cache
                  if (isTile && IsometricRenderer.AssetBrowser) {
-                     // Define Dynamic Subclass if not exists
                      if (!IsometricRenderer.TileBrowser) {
                          IsometricRenderer.TileBrowser = class extends IsometricRenderer.TokenBrowser {
                              get title() { return "Asset Browser"; }
+                             
                              get sources() {
                                  const sources = [...(IsometricRenderer.AssetBrowser.defaultSources || [])];
                                  const custom = game.settings.get("canvas3dcompendium", "assetBrowserCustomPath");
                                  if (custom) sources.push(custom);
-                                 // Add billboards manually (mimicking AssetBrowser behavior)
                                  sources.push("modules/canvas3dcompendium/assets/Vegetation_billboard/high_res");
                                  return sources;
                              }
-                             // Force source to be 'user' to ensure it scans correctly if needed, 
-                             // but TokenBrowser.getSources logic should handle path iteration.
+
+                             // Override _prepareContext to use STATIC class cache and bypass global module cache
+                             async _prepareContext() {
+                                 const data = {};
+                                 data.isTokenBrowser = false;//Don't show request token button
+                                 
+                                 // Use Static Class Cache if available (Persist across re-opens)
+                                 if (this.constructor._cache) {
+                                     this._assetCount = this.constructor._cache.materials.length;
+                                     return this.constructor._cache;
+                                 }
+                                 
+                                 const materials = [];
+                                 
+                                 // Use inherited getSources() which uses the internally imported getFiles()
+                                 // This bypasses the need for us to import it manually.
+                                 let files = [];
+                                 try {
+                                     files = await this.getSources();
+                                 } catch(e) {
+                                     console.error("3D-to-ISO | Error fetching sources:", e);
+                                 }
+                                 
+                                 // Process Files into Materials (Simplified Generic Logic)
+                                 // We removed the specific Token cleanup logic (MZ4250, etc) to avoid code duplication issues.
+                                 for (let file of files) {
+                                     const filename = file.split("/").pop();
+                                     // Generic cleanup: Remove extension, decode URL, replace underscores
+                                     const namePart = decodeURIComponent(filename.split(".")[0]);
+                                     const cleanName = namePart.replaceAll("_", " ");
+                                     
+                                     materials.push({
+                                         displayName: cleanName,
+                                         preview: file.replace(/\.(glb|gltf)$/i, ".webp"),
+                                         output: file,
+                                         search: filename, 
+                                         isNew: false, 
+                                         slug: cleanName.slugify ? cleanName.slugify({ strict: true }) : cleanName,
+                                     });
+                                 }
+                                 
+                                 // Sort Alphabetically
+                                 materials.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                                 
+                                 data.materials = materials;
+                                 data.hasInput = true;
+                                 this._assetCount = materials.length;
+                                 
+                                 // Cache on Class (Static)
+                                 this.constructor._cache = data;
+                                 
+                                 return data;
+                             }
                          }
                      }
                      BrowserClass = IsometricRenderer.TileBrowser;
+                 } else {
+                    // Ensure we use the base class for Tokens
+                    BrowserClass = IsometricRenderer.TokenBrowser;
                  }
-
+                 
+                 // Instantiate and Render (Clean instance every time)
                  new BrowserClass(proxyInput, this).render(true);
              });
         }
