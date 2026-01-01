@@ -963,6 +963,22 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         if (browseBtn && IsometricRenderer.TokenBrowser) {
              browseBtn.addEventListener("click", async () => {
                  const input = html.querySelector('input[name="modelPath"]');
+                 
+                 // Mock jQuery Helper for compatibility with TokenBrowser (canvas3dcompendium)
+                 // This allows us to avoid using the global $ object.
+                 const mockJQuery = (el) => ({
+                    0: el,
+                    length: el ? 1 : 0,
+                    val: function(v) {
+                        if (v !== undefined) {
+                            if (el) el.value = v;
+                            return this;
+                        }
+                        return el ? el.value : undefined;
+                    },
+                    // Add other jQuery methods if needed by external module
+                 });
+
                  // Create a proxy input to trap the value set by TokenBrowser and trigger a change event
                  const proxyInput = {
                      get value() { return input.value; },
@@ -970,7 +986,22 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                          input.value = val;
                          input.dispatchEvent(new Event("change", { bubbles: true }));
                      },
-                     closest: (sel) => input.closest(sel)
+                     // Standard DOM properties
+                     closest: (sel) => mockJQuery(input.closest(sel)),
+                     getAttribute: (attr) => input.getAttribute(attr),
+                     
+                     // jQuery compatibility for TokenBrowser (root level)
+                     val: function(v) {
+                        if (v !== undefined) {
+                            this.value = v;
+                            return this; 
+                        }
+                        return this.value; 
+                     },
+                     // Some jQuery plugins try to access the raw element via [0] or .get(0)
+                     0: input,
+                     get: (idx) => (idx === 0 ? input : undefined),
+                     length: 1
                  };
 
                  // Context Switching: Tile vs Token
@@ -1072,8 +1103,25 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                  
                  // Then Force Position (Handles both Sync and Async renders)
                  const applyPos = () => {
+                     // Check if app is actually rendered
+                     if (!this.assetBrowser.element || (this.assetBrowser.element.length === 0 && !this.assetBrowser.element.style)) {
+                         // Not ready? Try one more delay?
+                         return;
+                     }
+                     
                      if (this.assetBrowser.setPosition) {
-                         this.assetBrowser.setPosition({ left: targetLeft, top: rect.top });
+                         try {
+                             this.assetBrowser.setPosition({ left: targetLeft, top: rect.top });
+                         } catch (err) {
+                             // Fallback for V12 oddities or internal error
+                             console.warn("3D-to-ISO | setPosition failed, falling back to direct style", err);
+                             if (this.assetBrowser.element && this.assetBrowser.element.jquery) {
+                                  this.assetBrowser.element.css({ left: targetLeft, top: rect.top });
+                             } else if (this.assetBrowser.element instanceof HTMLElement) {
+                                  this.assetBrowser.element.style.left = `${targetLeft}px`;
+                                  this.assetBrowser.element.style.top = `${rect.top}px`;
+                             }
+                         }
                      } else {
                          // Fallback for weird App types or props
                          if (this.assetBrowser.element && this.assetBrowser.element.length > 0) {

@@ -3,13 +3,18 @@
  * Centralizes logic for asset detection, string parsing, and rotation mapping.
  */
 // V13 Compatibility: Resolve FilePicker implementation
-const FilePickerApp = foundry.applications?.apps?.FilePicker?.implementation;
+// V13 Compatibility: Resolve FilePicker implementation safely
+const FilePickerApp = foundry.applications?.apps?.FilePicker?.implementation ?? FilePicker;
 
 export const CARDINALS_8 = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
 export const CARDINALS_16 = [
     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
     "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE"
 ];
+
+export function isV12() {
+    return game.release.generation === 12;
+}
 
 /**
  * Parses a file path to identify its base name and potential directional suffix.

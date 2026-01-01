@@ -3,6 +3,9 @@
 **3D to Iso** is a Foundry VTT module that bridges the gap between 3D assets and isometric gameplay. It allows you to import 3D models (GLB/GLTF), apply stylistic shaders, and render them into a series of isometric sprites. These sprites can be used for Tokens or Tiles, and the module automatically handles sprite switching based on token rotation, simulating a 3D presence in an isometric scene.
 
 This module is designed to work seamlessly with **Isometric Perspective** and other isometric tools.
+> [!NOTE]
+> **Foundry V13 & V12 Compatibility**
+> While this module is primarily designed for Foundry V13, compatibility patches have been introduced to support Foundry V12. Please note that V12 support is a secondary focus and some advanced features may be optimized for V13.
 
 ## Key Features
 
@@ -40,7 +43,7 @@ Before using the module, please configure the global settings in **Game Settings
 4. The Tile will now rotate visually when its rotation property is changed!
 
 ### Adjusting the Pivot Point
-Sometimes a 3D model's origin point is not at its feet, causing it to "wobble" or float off-center when rotated isometrically. Use the **Pivot Tool** to fix this:
+Sometimes a 3D model's origin point is not at its feet or center of mass, causing it to "wobble" or float off-center when rotated isometrically. Use the **Pivot Tool** to fix this:
 1. Click the **Set Pivot** button (Crosshair icon) in the renderer toolbar.
 2. The view will switch to a top-down alignment and the model will reset to neutral rotation.
 3. A draggable **Pivot Handle** will appear at the center of the screen.

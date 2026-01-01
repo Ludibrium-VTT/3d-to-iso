@@ -1,4 +1,4 @@
-<div class="tab {{tab.cssClass}}" data-tab="isometricModel" data-group="sheet">
+<div class="tab {{tab.cssClass}}" data-tab="isometricModel" data-group="{{tab.group}}">
     <fieldset>
         <legend><i class="fas fa-cube"></i> {{localize "3D_TO_ISO.Set3DModel"}}</legend>
         <div class="form-group isometric-config-group">
@@ -16,6 +16,11 @@
                 <button type="button" class="select-token-image" style="margin-top: 5px;">
                     <i class="fas fa-file-image"></i> {{localize "3D_TO_ISO.SelectTokenImage"}}
                 </button>
+                <!--
+                <button type="button" class="import-gif-frames" style="margin-top: 5px;">
+                    <i class="fas fa-file-import"></i> {{localize "3D_TO_ISO.ImportGif"}}
+                </button>
+                -->
             </div>
             {{#if isometric.isUnsaved}}
             <p class="notes warning" style="color: var(--color-text-error); margin-top: 5px;">

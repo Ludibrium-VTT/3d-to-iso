@@ -5,7 +5,8 @@
  * 2. Dynamic texture switching based on token rotation.
  */
 
-import { detectAvailableFacings, getFacingFromRotation, generateGallery } from "./utils.js";
+import { detectAvailableFacings, getFacingFromRotation, generateGallery, isV12 } from "./utils.js";
+// import { importGif } from "./gif-importer.js";
 
 /* -------------------------------------------- */
 /*  Token Configuration Integration             */
@@ -257,6 +258,45 @@ export const integrate3DToIso = (ConfigClass) => {
             });
         }
 
+        // New: Import GIF Logic
+        
+        /*
+        const importGifBtn = html.querySelector(".import-gif-frames");
+        if (importGifBtn) {
+            const doc = this.document || this.object;
+            let actor = this.actor;
+            if (!actor && doc) {
+                if (doc.documentName === "Actor") actor = doc;
+                else if (doc.actor) actor = doc.actor;
+                else if (doc.parent && doc.parent.documentName === "Actor") actor = doc.parent;
+            }
+
+            const hasId = (doc?.id) || (actor && actor.id);
+            if (!hasId) {
+                  importGifBtn.disabled = true;
+                  importGifBtn.style.opacity = "0.5";
+                  importGifBtn.style.cursor = "not-allowed";
+                  importGifBtn.title = "Please finish creating the document before attempting to assign iso sprites to it";
+                  importGifBtn.style.pointerEvents = "none";
+            }
+            
+            importGifBtn.addEventListener("click", (e) => {
+                 e.preventDefault();
+                 const input = document.createElement("input");
+                 input.type = "file";
+                 input.accept = ".gif";
+                 input.onchange = (ev) => {
+                      const file = ev.target.files[0];
+                      if (file) {
+                           const target = (doc?.documentName === "Tile") ? doc : actor;
+                           if (target) importGif(file, target);
+                      }
+                 };
+                 input.click();
+            });
+        }
+        */
+
         // Live-update input
         const textureInput = html.querySelector('input[name="texture.src"], input[name="prototypeToken.texture.src"]');
         if (textureInput) {
@@ -295,14 +335,25 @@ export const integrate3DToIso = (ConfigClass) => {
     };
 };
 
+import { registerV12TokenSupport } from "./compatibility-v12.js";
+
+// ... (existing imports)
+
 Hooks.once("ready", () => {
     if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
 
-    // Apply to standard TokenConfig
-    integrate3DToIso(foundry.applications.sheets.TokenConfig);
-    
-    // Apply to PrototypeTokenConfig - V13 core location
-    integrate3DToIso(foundry.applications.sheets.PrototypeTokenConfig);
+    // V12 Compatibility Check
+    if (isV12()) {
+        registerV12TokenSupport();
+    } else {
+        // V13+ Integration
+        if (foundry.applications.sheets?.TokenConfig) {
+             integrate3DToIso(foundry.applications.sheets.TokenConfig);
+        }
+        if (foundry.applications.sheets?.PrototypeTokenConfig) {
+             integrate3DToIso(foundry.applications.sheets.PrototypeTokenConfig);
+        }
+    }
 });
 
 /* -------------------------------------------- */

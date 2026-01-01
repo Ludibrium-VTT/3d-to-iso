@@ -209,8 +209,8 @@
 }
 
 .isometric-renderer-app .zoom-slider-container input[type="range"] {
-    writing-mode: bt-lr; /* IE */
-    -webkit-appearance: slider-vertical; /* WebKit */
+    writing-mode: vertical-lr;
+    direction: rtl; /* Bottom-to-top */
     width: 8px;
     flex: 1;
     margin: 0;
