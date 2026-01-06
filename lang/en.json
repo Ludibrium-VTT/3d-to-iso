@@ -49,7 +49,7 @@
     "CurrentModel": "Current Model",
     "GeneratedGallery": "Available Facings",
     "RefreshFacings": "Find All Facings",
-    "SelectTokenImage": "Setup Facings from Image",
+    "SelectTokenImage": "Set Up Facings from Image",
     "ImportGif": "Import Animated GIF",
     "RenderMode": "Render Mode",
     "ModeCardinal": "Cardinal Directions (8-Way)",
@@ -61,6 +61,20 @@
     "OutputPrefix": "Output Filename Prefix",
     "OutputPrefixPlaceholder": "Optional (e.g. MyToken)",
     "EnableRotationUtils": "Enable Rotation & Management Utils",
-    "EnableRotationUtilsHint": "Turn this off if you only want to use the 3d renderer but you don't want 3d-to-Iso to manage tile and token art when rotating."
+    "EnableRotationUtilsHint": "Turn this off if you only want to use the 3d renderer but you don't want 3d-to-Iso to manage tile and token art when rotating.",
+    "Import": "Import",
+    "GIF": {
+        "DetectedFrames": "Detected <strong>{count} frames</strong>.",
+        "ImportNotes": "Import options for converting GIF to sprites.",
+        "PreviewNote": "Pick Key Color from this preview if needed.",
+        "RemoveBackground": "Remove Background",
+        "KeyColor": "Key Color",
+        "KeyColorHint": "Color to treat as transparent. Defaults to top-left pixel.",
+        "Tolerance": "Tolerance",
+        "ToleranceHint": "Sensitivity of the color match. 0 is exact match only.",
+        "SampleRate": "Sample Every Nth Frame",
+        "SampleRateHint": "Downsample frames to save space and improved performance.",
+        "ResultFrames": "Result"
+    }
   }
 }

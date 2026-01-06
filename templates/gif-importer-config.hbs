@@ -1,0 +1,42 @@
+<div>
+<div class="form-group text-block">
+    <p>{{{localize "3D_TO_ISO.GIF.DetectedFrames" count=frameCount}}}</p>
+    <p class="notes">{{localize "3D_TO_ISO.GIF.ImportNotes"}}</p>
+</div>
+<div class="form-group text-block" style="text-align: center; margin: 10px 0;">
+    <img src="{{previewUrl}}" style="max-height: 150px; object-fit: contain; border: 1px solid var(--color-border-light-2); border-radius: 5px;" alt="GIF Preview">
+    <p class="notes">{{localize "3D_TO_ISO.GIF.PreviewNote"}}</p>
+</div>
+<hr>
+<div class="form-group">
+    <label>{{localize "3D_TO_ISO.GIF.RemoveBackground"}}</label>
+    <div class="form-fields">
+        <input type="checkbox" name="removeBackground" checked>
+    </div>
+</div>
+<div class="form-group" title="{{localize '3D_TO_ISO.GIF.KeyColorHint'}}">
+    <label>{{localize "3D_TO_ISO.GIF.KeyColor"}}</label>
+    <div class="form-fields">
+        <input type="color" name="keyColor" value="{{defaultColor}}">
+    </div>
+</div>
+<div class="form-group" title="{{localize '3D_TO_ISO.GIF.ToleranceHint'}}">
+    <label>{{localize "3D_TO_ISO.GIF.Tolerance"}} (0.0 - 1.0)</label>
+    <div class="form-fields">
+        <input type="number" name="tolerance" value="0.4" min="0" max="1" step="0.05">
+    </div>
+</div>
+<hr>
+<div class="form-group" title="{{localize '3D_TO_ISO.GIF.SampleRateHint'}}">
+    <label>{{localize "3D_TO_ISO.GIF.SampleRate"}}</label>
+    <div class="form-fields">
+        <input type="number" name="sampleRate" value="{{defaultStep}}" min="1" max="{{frameCount}}">
+        <p class="notes result-notes">{{localize "3D_TO_ISO.GIF.ResultFrames"}}: ~<span id="calc-frames">{{resultFrames}}</span></p>
+    </div>
+</div>
+<div class="form-footer">
+    <button type="submit" name="import" class="save-button">
+        <i class="fas fa-file-import"></i> {{localize "3D_TO_ISO.Import"}}
+    </button>
+</div>
+</div>

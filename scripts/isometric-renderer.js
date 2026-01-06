@@ -1,5 +1,6 @@
 import { TransformControls } from "../vendor/TransformControls.js";
 import { integrate3DToIso } from "./token.js";
+import { assignFacings } from "./utils.js";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 // V13 Compatibility: Resolve FilePicker implementation
@@ -1015,25 +1016,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                         this.ambientIntensity = numValue;
                         if (this.ambientLight) this.ambientLight.intensity = numValue;
                         
-                        // Find label in parent group (it's now in the label, above form-fields)
                         const group = el.closest(".form-group");
-                        // We use a slightly different selector or just generic class? 
-                        // The template uses specific classes: .display-ambientIntensity
-                        // Note: I put a hidden span in .form-fields in Previous Step for ambient? 
-                        // No, I put: <label>Ambient Light <span class="value">- {{ambientIntensity}}</span></label>
-                        // And <span class="range-value display-ambientIntensity" style="display:none">...</span> in fields (leftover?)
-                        // I should target the one in the label. I didn't give the label span a class like 'display-ambientIntensity' in the previous step?
-                        // Let's check previous step content.
-                        
-                        // Previous step content for Ambient:
-                        // <label>Ambient Light <span class="value">- {{ambientIntensity}}</span></label>
-                        // ... <span class="range-value display-ambientIntensity" style="display:none">
-                        
-                        // I forgot to add a class to the span in the label for Ambient! 
-                        // For effects I added `display-effect-sepia`.
-                        
-                        // I need to fix the template for Ambient first to add a targeting class to the label span.
-                        // OR just find the .value span inside the label.
                         
                         const labelValue = group.querySelector("label .value");
                         if (labelValue) labelValue.textContent = `- ${numValue}`;
@@ -1699,49 +1682,38 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         const keys = Object.keys(paths);
         if (!paths || keys.length === 0) return;
 
-        // 2. Prepare Update Data for Atomic Commit
-        // We determine the target document. If a specific token is being edited, we update THAT token (overrides).
-        // If an Actor is being edited (no specific token), we update the Actor.
-        // This ensures flags and texture stay in sync, preventing "404 Gallery" race conditions.
+        // 2. Prepare Data
         const target = this.token || this.document;
-        const isActor = target.documentName === "Actor";
         
-        const updateData = {};
-        
-        // Flags
-        updateData["flags.3d-to-iso.modelPath"] = this.modelPath;
-        updateData["flags.3d-to-iso.adjustments"] = this.adjustments;
-        updateData["flags.3d-to-iso.facingMode"] = this.renderMode;
-        
-        if (keys.length > 0) {
-             let storedFacings = [];
-            if (this.renderMode === "numeric") {
-                const isTiny = this.frameCount < 10;
-                const pad = isTiny ? 1 : 3;
-                storedFacings = keys.map(k => parseInt(k).toString().padStart(pad, '0'));
-            } else {
-                storedFacings = keys;
-            }
-             updateData["flags.3d-to-iso.availableFacings"] = storedFacings;
-             updateData["flags.3d-to-iso.enabled"] = true; 
+        let storedFacings = [];
+        if (this.renderMode === "numeric") {
+            const isTiny = this.frameCount < 10;
+            const pad = isTiny ? 1 : 3;
+            storedFacings = keys.map(k => parseInt(k).toString().padStart(pad, '0'));
+        } else {
+            storedFacings = keys;
         }
 
-        // Texture Source
+        // Texture Source (Pick one to start)
+        // We let assignFacings handle the final choice (usually "S"), but we need a valid starting path.
+        // We pick the first one available.
         let primaryKey = keys[0];
-        if (this.renderMode === "cardinal" && paths.NE) primaryKey = "NE";
-        if (this.renderMode === "numeric") primaryKey = keys[0]; // Frame 0
         const primaryPath = paths[primaryKey];
 
-        if (isActor) {
-             updateData["prototypeToken.texture.src"] = primaryPath;
-             updateData["prototypeToken.flags.3d-to-iso.enabled"] = true;
-        } else {
-             // Token or Tile
-             updateData["texture.src"] = primaryPath;
-        }
-
-        // 3. Execute Atomic Update
-        await target.update(updateData, { from3DApp: true });
+        // 3. Delegate to Unified Helper
+        // We pass modelPath and adjustments via extraFlags to preserve them.
+        await assignFacings(
+            target, 
+            primaryPath, 
+            storedFacings, 
+            this.renderMode, 
+            true, 
+            { 
+                modelPath: this.modelPath,
+                adjustments: this.adjustments 
+            },
+            { from3DApp: true } // updateContext
+        );
         
         // Notify
         ui.notifications.info(game.i18n.format("3D_TO_ISO.ProcessComplete", { count: keys.length }));

@@ -16,11 +16,9 @@
                 <button type="button" class="select-token-image" style="margin-top: 5px;">
                     <i class="fas fa-file-image"></i> {{localize "3D_TO_ISO.SelectTokenImage"}}
                 </button>
-                <!--
                 <button type="button" class="import-gif-frames" style="margin-top: 5px;">
                     <i class="fas fa-file-import"></i> {{localize "3D_TO_ISO.ImportGif"}}
                 </button>
-                -->
             </div>
             {{#if isometric.isUnsaved}}
             <p class="notes warning" style="color: var(--color-text-error); margin-top: 5px;">
@@ -36,9 +34,6 @@
             <div class="form-group">
                 <label>
                     {{localize "3D_TO_ISO.GeneratedGallery"}}
-                    <button type="button" class="refresh-facings" style="width: auto; margin-left: auto; font-size: 0.7rem; padding: 0 5px; line-height: 1.5;">
-                        <i class="fas fa-sync"></i> {{localize "3D_TO_ISO.RefreshFacings"}}
-                    </button>
                 </label>
                 <div class="isometric-gallery">
                     {{#each isometric.gallery}}

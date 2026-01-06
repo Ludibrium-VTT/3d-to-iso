@@ -5,8 +5,8 @@
  * 2. Dynamic texture switching based on token rotation.
  */
 
-import { detectAvailableFacings, getFacingFromRotation, generateGallery, isV12 } from "./utils.js";
-// import { importGif } from "./gif-importer.js";
+import { detectAvailableFacings, getFacingFromRotation, generateGallery, isV12, assignFacings } from "./utils.js";
+import { importGif } from "./gif-importer.js";
 
 /* -------------------------------------------- */
 /*  Token Configuration Integration             */
@@ -143,22 +143,7 @@ export const integrate3DToIso = (ConfigClass) => {
             });
         }
         
-        // Refresh Facings
-        const refreshBtn = html.querySelector(".refresh-facings");
-        if (refreshBtn) {
-            refreshBtn.addEventListener("click", async (event) => {
-                event.preventDefault();
-                const src = (doc.documentName === "Actor") ? doc.prototypeToken?.texture?.src : doc.texture?.src;
-                if (!src) return ui.notifications.warn("No texture to check.");
-                
-                // For Tiles, target is doc. For tokens/actors, target is actor usually.
-                const targetFlagDoc = (doc.documentName === "Tile") ? doc : actor; 
-                
-                ui.notifications.info("Scanning for facings...");
-                await detectAvailableFacings(targetFlagDoc, src);
-                this.render(); // Re-render to show updated gallery
-            });
-        }
+
 
         // New: Setup Facings from Image Button Logic
         const selectImgBtn = html.querySelector(".select-token-image");
@@ -197,58 +182,12 @@ export const integrate3DToIso = (ConfigClass) => {
                          
                         const result = await detectAvailableFacings(targetDetect, path, { commit: false });
                         
-                        // 2. Prepare Atomic Update Data
-                        const updateData = {};
-                        const isActor = doc?.documentName === "Actor" || !doc; // If no doc, assume actor prototype
-                        
-                        // Flags
-                        updateData["flags.3d-to-iso.modelPath"] = null; // Clear explicit model path
-                        
-                        if (result.found && result.found.length > 0) {
-                            updateData["flags.3d-to-iso.availableFacings"] = result.found;
-                            updateData["flags.3d-to-iso.facingMode"] = result.mode;
-                            updateData["flags.3d-to-iso.enabled"] = true;
-                        } else {
-                            updateData["flags.3d-to-iso.availableFacings"] = null;
-                            updateData["flags.3d-to-iso.facingMode"] = null;
-                        }
-
-                        // 3. Determine Best Texture Path
-                        let finalPath = path;
-                        if (result.found && result.found.length > 0) {
-                            // Prefer NE, then S, then first avilable
-                            let bestFacing = result.found[0];
-                            if (result.mode === "cardinal") {
-                                const ne = result.found.find(f => f.toUpperCase() === "NE");
-                                const s = result.found.find(f => f.toUpperCase() === "S");
-                                if (ne) bestFacing = ne;
-                                else if (s) bestFacing = s;
-                            }
-                            
-                            // Find matching file in gallery logic
-                            const gallery = generateGallery(result.found, path);
-                            const match = gallery.find(g => g.direction === bestFacing);
-                            if (match) finalPath = match.src;
-                        }
-
-                        // Texture Key
-                        const srcKey = isActor ? "prototypeToken.texture.src" : "texture.src";
-                        updateData[srcKey] = finalPath;
-                        
-                        // Ensure enabled on prototype if Actor
-                        if (isActor) {
-                            updateData["prototypeToken.flags.3d-to-iso.enabled"] = true;
-                        }
-
-                        // 4. Execute Update
-                        if (doc) await doc.update(updateData);
-                        else if (actor) await actor.update(updateData);
+                        await assignFacings(doc || actor, path, result.found, result.mode, true);
                         
                         ui.notifications.info(`Setup Complete. Found ${result.found.length} facings.`);
                         
-                        // Explicitly set pending source so the UI definitely uses the new path,
-                        // avoiding stale data if the document clone hasn't refreshed yet.
-                        this._pendingSrc = finalPath;
+                        // Explicitly set pending source
+                        this._pendingSrc = path;
                         this._pendingFacings = result.found;
                         
                         // Force re-render just in case
@@ -260,7 +199,6 @@ export const integrate3DToIso = (ConfigClass) => {
 
         // New: Import GIF Logic
         
-        /*
         const importGifBtn = html.querySelector(".import-gif-frames");
         if (importGifBtn) {
             const doc = this.document || this.object;
@@ -285,17 +223,16 @@ export const integrate3DToIso = (ConfigClass) => {
                  const input = document.createElement("input");
                  input.type = "file";
                  input.accept = ".gif";
-                 input.onchange = (ev) => {
+                 input.onchange = async (ev) => {
                       const file = ev.target.files[0];
                       if (file) {
-                           const target = (doc?.documentName === "Tile") ? doc : actor;
-                           if (target) importGif(file, target);
+                           const target = doc;
+                           if (target) await importGif(file, target, this);
                       }
                  };
                  input.click();
             });
         }
-        */
 
         // Live-update input
         const textureInput = html.querySelector('input[name="texture.src"], input[name="prototypeToken.texture.src"]');
@@ -363,6 +300,11 @@ Hooks.once("ready", () => {
 Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
     if (!game.settings.get("3d-to-iso", "enableRotationUtils")) return;
 
+    // If this update contains a texture change, we STOP and let that happen.
+    // This prevents our rotation logic from fighting with manual/GIF imports.
+    // Check both nested object and flat key modification
+    if (update.texture?.src || update["texture.src"]) return;
+
     // Only proceed if rotation is being updated
     if (update.rotation === undefined) return;
 
@@ -372,12 +314,12 @@ Hooks.on("preUpdateToken", (tokenDoc, update, options, userId) => {
     if (!is3d) return;
 
     // Get current texture
-    let currentSrc = update.texture?.src || tokenDoc.texture.src;
+    let currentSrc = foundry.utils.getProperty(update, "texture.src") || (update.texture?.src) || tokenDoc.texture.src;
     if (!currentSrc) return;
 
     // Available facings
-    const available = tokenDoc.actor?.getFlag("3d-to-iso", "availableFacings") || ["NE", "NW", "SE", "SW"];
-    const mode = tokenDoc.actor?.getFlag("3d-to-iso", "facingMode") || "cardinal";
+    const available = tokenDoc.getFlag("3d-to-iso", "availableFacings") || tokenDoc.actor?.getFlag("3d-to-iso", "availableFacings") || ["NE", "NW", "SE", "SW"];
+    const mode = tokenDoc.getFlag("3d-to-iso", "facingMode") || tokenDoc.actor?.getFlag("3d-to-iso", "facingMode") || "cardinal";
     
     // Get Target Facing
     const targetFacing = getFacingFromRotation(update.rotation, available, mode);
@@ -416,7 +358,7 @@ Hooks.on("updateToken", async (tokenDoc, update, options, userId) => {
         }
 
         const is3d = tokenDoc.getFlag("3d-to-iso", "enabled") || actor?.getFlag("3d-to-iso", "enabled");
-        if (is3d && actor) {
+        if (is3d && actor && !options.from3DApp) {
             detectAvailableFacings(actor, update.texture.src);
         }
     }

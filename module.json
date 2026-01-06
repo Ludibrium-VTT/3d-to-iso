@@ -34,7 +34,8 @@
     }
   ],
   "styles": [
-    "styles/isometric-renderer.css"
+    "styles/isometric-renderer.css",
+    "styles/gif-importer.css"
   ],
   "url": "https://github.com/Ludibrium-VTT/3d-to-iso",
   "manifest": "https://github.com/Ludibrium-VTT/3d-to-iso/releases/latest/download/module.json",

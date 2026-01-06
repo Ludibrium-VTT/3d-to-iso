@@ -1,4 +1,5 @@
-import { detectAvailableFacings, generateGallery } from "./utils.js";
+import { detectAvailableFacings, generateGallery, isV12 } from "./utils.js";
+import { importGif } from "./gif-importer.js";
 
 /**
  * Helper to inject the Isometric tab into V12 sheets.
@@ -110,6 +111,21 @@ async function injectV12Tab(app, html, options = {}) {
                 await doc.update(updateData);
             }
         }).browse();
+    });
+
+    tabContent.querySelector(".import-gif-frames")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".gif";
+        input.onchange = async (ev) => {
+             const file = ev.target.files[0];
+             if (file) {
+                  const target = (doc.documentName === "Tile") ? doc : doc; 
+                  if (target) await importGif(file, target, app);
+             }
+        };
+        input.click();
     });
 
     // 6. Re-bind Tab Controllers

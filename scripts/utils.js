@@ -311,3 +311,80 @@ export function generateGallery(availableFacings, currentSrc) {
         src: `${parsed.base}_${d}.${parsed.ext}`
     }));
 }
+
+/**
+ * Universal helper to assign 3D-to-ISO state to a document.
+ * Handles the differences between Acotrs and Tokens, and ensures atomic updates.
+ * 
+ * @param {Document} doc - The target document (Actor, TokenDocument, or TileDocument)
+ * @param {string} path - The base texture path to use (e.g. "path/to/token.png" or "path/to/token_000.png")
+ * @param {string[]} facings - Array of available facings (e.g. ["N", "S"] or ["000", "001"])
+ * @param {string} mode - "cardinal" or "numeric"
+ * @param {boolean} [commit=true] - Whether to execute the update
+ * @returns {Promise<object>} The update data object
+ */
+export async function assignFacings(doc, path, facings, mode, commit = true, extraFlags = {}, updateContext = {}) {
+    if (!doc || !path) return {};
+
+    const updateData = {};
+    const isActor = doc.documentName === "Actor";
+
+    // 1. Determine safe "best" starting texture
+    // Even if we have facings, we need to pick ONE to set as the active image.
+    // If 'path' itself is one of the facings, great. If not, we try to pick "S" or "0".
+    
+    let finalPath = path;
+    const gallery = generateGallery(facings, path);
+    
+    if (facings && facings.length > 0) {
+        let bestFacing = facings[0];
+        
+        // Prefer South 
+        if (mode === "cardinal") {
+             const s = facings.find(f => f.toUpperCase() === "S");
+             const ne = facings.find(f => f.toUpperCase() === "NE"); // Fallback preference
+             if (s) bestFacing = s;
+             else if (ne) bestFacing = ne;
+        } else {
+             // For numeric, usually 0 is fine (South-ish)
+             // Or whatever is first
+        }
+        
+        // Find correct filename for this facing from gallery logic
+        const match = gallery.find(g => g.direction === bestFacing);
+        if (match) finalPath = match.src;
+    }
+
+    // 2. Build Flags (Flat Structure)
+    // Handle modelPath: If provided in extraFlags, use it. Otherwise nullify it (default behavior for new import).
+    if (extraFlags.modelPath !== undefined) {
+        updateData["flags.3d-to-iso.modelPath"] = extraFlags.modelPath;
+    } else {
+        updateData["flags.3d-to-iso.modelPath"] = null;
+    }
+
+    updateData["flags.3d-to-iso.availableFacings"] = (facings && facings.length) ? facings : null;
+    updateData["flags.3d-to-iso.facingMode"] = (facings && facings.length) ? mode : null;
+    updateData["flags.3d-to-iso.enabled"] = (facings && facings.length > 0);
+
+    // Merge other extra flags
+    for (const [key, value] of Object.entries(extraFlags)) {
+        if (key !== "modelPath") {
+             updateData[`flags.3d-to-iso.${key}`] = value;
+        }
+    }
+
+    // 3. Build Texture Update (Flat Structure)
+    if (isActor) {
+        updateData["prototypeToken.texture.src"] = finalPath;
+        updateData["prototypeToken.flags.3d-to-iso.enabled"] = true;
+    } else {
+        updateData["texture.src"] = finalPath;
+    }
+
+    if (commit) {
+        await doc.update(updateData, updateContext);
+    }
+
+    return updateData;
+}

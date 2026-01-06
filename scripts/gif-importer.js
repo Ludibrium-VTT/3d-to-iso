@@ -1,12 +1,14 @@
 import { GifReader } from "../vendor/omggif.js";
-import { detectAvailableFacings } from "./utils.js";
+import { assignFacings, isV12 } from "./utils.js";
+import { GifImportConfig } from "./apps/gif-importer-config.js";
 
 /**
  * Imports a GIF file, extracts its frames, and saves them as a sequence of PNGs.
  * @param {File} file - The GIF file object.
  * @param {Document} doc - The Token or Actor document.
+ * @param {Application} app - Optional application instance to refresh.
  */
-export async function importGif(file, doc) {
+export async function importGif(file, doc, app = null) {
     if (!file) return;
 
     // 1. Read File
@@ -51,84 +53,100 @@ export async function importGif(file, doc) {
     } catch (e) {}
     
     // Dialog Content
-    const targetFrames = 32;
-    const defaultStep = Math.max(1, Math.round(frameCount / targetFrames));
-    
-    const content = `
-    <form>
-        <div class="form-group">
-            <p>Detected <strong>${frameCount} frames</strong>.</p>
-            <p class="notes">Import options for converting GIF to Sprite Sheet.</p>
-        </div>
-        <hr>
-        <div class="form-group">
-            <label>Remove Background</label>
-            <input type="checkbox" name="removeBackground" checked>
-        </div>
-        <div class="form-group" title="Color to treat as transparent. Defaults to top-left pixel.">
-            <label>Key Color</label>
-            <input type="color" name="keyColor" value="${defaultColor}">
-        </div>
-        <div class="form-group" title="Sensitivity of the color match. 0 is exact match only.">
-            <label>Tolerance (0.0 - 1.0)</label>
-            <input type="number" name="tolerance" value="0.1" min="0" max="1" step="0.05">
-        </div>
-        <hr>
-        <div class="form-group" title="Downsample frames to save space and improved performance.">
-            <label>Sample Every Nth Frame</label>
-            <input type="number" name="sampleRate" value="${defaultStep}" min="1" max="${frameCount}">
-            <p class="notes">Result: ~<span id="calc-frames">${Math.ceil(frameCount / defaultStep)}</span> frames</p>
-        </div>
-        <script>
-            (function() {
-                const init = () => {
-                    const doc = document;
-                    const input = doc.querySelector('input[name="sampleRate"]');
-                    const output = doc.querySelector('#calc-frames');
-                    if (input && output) {
-                        input.addEventListener('input', () => {
-                            const val = parseInt(input.value) || 1;
-                            output.textContent = Math.ceil(${frameCount} / val);
-                        });
-                    }
-                };
-                // Try immediate, fallback to slight delay if DOM parsing lags
-                init();
-                setTimeout(init, 100); 
-            })();
-        </script>
-    </form>
-    `;
+    // 3. User Configuration Dialog
+    let config = null;
 
-    const config = await new Promise(resolve => {
-        new Dialog({
-            title: "Import Animated GIF",
-            content: content,
-            buttons: {
-                 import: {
-                     icon: '<i class="fas fa-file-import"></i>',
-                     label: "Import",
-                     callback: (html) => {
-                         // Safe unwrap if jQuery
-                         const root = (html.jquery) ? html[0] : html;
-                         
-                         resolve({
-                             removeBackground: root.querySelector('[name="removeBackground"]').checked,
-                             keyColor: root.querySelector('[name="keyColor"]').value,
-                             tolerance: parseFloat(root.querySelector('[name="tolerance"]').value) || 0.1,
-                             sampleRate: parseInt(root.querySelector('[name="sampleRate"]').value) || 1
-                         });
+    // Generate preview image from the first frame
+    tempCtx.putImageData(tempImgData, 0, 0);
+    const previewUrl = tempCanvas.toDataURL("image/png");
+
+    if (isV12()) {
+        const targetFrames = 32;
+        const defaultStep = Math.max(1, Math.round(frameCount / targetFrames));
+        
+        const content = `
+        <form>
+            <div class="form-group">
+                <p>Detected <strong>${frameCount} frames</strong>.</p>
+                <p class="notes">Import options for converting GIF to sprites.</p>
+            </div>
+            <div class="form-group" style="text-align: center; margin: 10px 0;">
+                <img src="${previewUrl}" style="max-height: 150px; object-fit: contain; border: 1px solid #782e22; border-radius: 5px;" alt="GIF Preview">
+                <p class="notes">Pick Key Color from this preview if needed.</p>
+            </div>
+            <hr>
+            <div class="form-group">
+                <label>Remove Background</label>
+                <input type="checkbox" name="removeBackground" checked>
+            </div>
+            <div class="form-group" title="Color to treat as transparent. Defaults to top-left pixel.">
+                <label>Key Color</label>
+                <div class="form-fields">
+                    <input type="color" name="keyColor" value="${defaultColor}" style="width: 50px;">
+                </div>
+            </div>
+            <div class="form-group" title="Sensitivity of the color match. 0 is exact match only.">
+                <label>Tolerance (0.0 - 1.0)</label>
+                <input type="number" name="tolerance" value="0.4" min="0" max="1" step="0.05">
+            </div>
+            <hr>
+            <div class="form-group" title="Downsample frames to save space and improved performance.">
+                <label>Sample Every Nth Frame</label>
+                <input type="number" name="sampleRate" value="${defaultStep}" min="1" max="${frameCount}">
+                <p class="notes">Result: ~<span id="calc-frames">${Math.ceil(frameCount / defaultStep)}</span> frames</p>
+            </div>
+            <script>
+                (function() {
+                    const init = () => {
+                        const doc = document;
+                        const input = doc.querySelector('input[name="sampleRate"]');
+                        const output = doc.querySelector('#calc-frames');
+                        if (input && output) {
+                            input.addEventListener('input', () => {
+                                const val = parseInt(input.value) || 1;
+                                output.textContent = Math.ceil(${frameCount} / val);
+                            });
+                        }
+                    };
+                    init();
+                    setTimeout(init, 100); 
+                })();
+            </script>
+        </form>
+        `;
+
+        config = await new Promise(resolve => {
+            new Dialog({
+                title: "Import Animated GIF",
+                content: content,
+                buttons: {
+                     import: {
+                         icon: '<i class="fas fa-file-import"></i>',
+                         label: "Import",
+                         callback: (html) => {
+                             const root = (html.jquery) ? html[0] : html;
+                             
+                             resolve({
+                                 removeBackground: root.querySelector('[name="removeBackground"]').checked,
+                                 keyColor: root.querySelector('[name="keyColor"]').value,
+                                 tolerance: parseFloat(root.querySelector('[name="tolerance"]').value) || 0.4,
+                                 sampleRate: parseInt(root.querySelector('[name="sampleRate"]').value) || 1
+                             });
+                         }
+                     },
+                     cancel: {
+                         icon: '<i class="fas fa-times"></i>',
+                         label: "Cancel",
+                         callback: () => resolve(null)
                      }
-                 },
-                 cancel: {
-                     icon: '<i class="fas fa-times"></i>',
-                     label: "Cancel",
-                     callback: () => resolve(null)
-                 }
-            },
-            default: "import"
-        }).render(true);
-    });
+                },
+                default: "import"
+            }).render(true);
+        });
+    } else {
+        // V13+ Use ApplicationV2
+        config = await GifImportConfig.wait(frameCount, defaultColor, previewUrl);
+    }
 
     if (!config) return;
 
@@ -212,25 +230,17 @@ export async function importGif(file, doc) {
         console.warn("Directory creation warning:", e);
     }
 
-    // 6. Process Frames
-    const uploadPromises = [];
-    const createdFiles = []; // Track actual filenames for manual flag construction
+    // 6. Process Frames (Extraction Phase)
+    const step = config.sampleRate || 1;
+    ui.notifications.info(`Extracting frames (Sample Rate: ${step})...`);
+
+    const filesToUpload = [];
+    const createdFiles = []; // Track actual filenames 
     
     // Helper to get blob
     const getCanvasBlob = (canvas) => {
         return new Promise(resolve => canvas.toBlob(resolve, "image/png"));
     };
-    
-    // Calculate final frame count
-    const step = config.sampleRate || 1;
-    const finalFrameCount = Math.ceil(frameCount / step);
-    
-    ui.notifications.info(`Extracting ${finalFrameCount} frames (Sample Rate: ${step})...`);
-
-    // We need to blit frames sequentially because GIFs often rely on previous frame disposal
-    // To be safe, we clear canvas if disposal is 'restore to background' etc, but simple blit usually works for simple sprites.
-    // omggif's decodeAndBlitFrameRGBA handles writing pixels to a buffer. 
-    // We should put that buffer into ImageData.
     
     let savedIndex = 0;
 
@@ -254,87 +264,51 @@ export async function importGif(file, doc) {
         const fileName = `${filename}_${savedIndex.toString().padStart(3, "0")}.png`;
         const fileObj = new File([blob], fileName, { type: "image/png" });
 
-        // Queue upload
-        // Fix: Use correct namespace if available, or just suppress usage of deprecated one if possible
-        // Actually, the warning specifically says: "You are accessing the global 'FilePicker' which is now namespaced under..."
-        // So we should use `foundry.applications.apps.FilePicker`.
-        const PickerClass = foundry.applications?.apps?.FilePicker || FilePicker;
-
-        const p = PickerClass.upload("data", savePath, fileObj, { bucket: null })
-                .then(result => result.path);
-        
-        uploadPromises.push(p);
-        
-        // We can predict the path based on result, but to be safe we use what Upload returns.
-        // However, result.path is usually exactly what we expect.
-        // For Manual Flag Construction, we need the paths.
-        // Since we are waiting on all promises, we can just grab results.
+        filesToUpload.push(fileObj);
         savedIndex++;
     }
 
-    // 7. Upload All
-    ui.notifications.info(`Uploading ${uploadPromises.length} frames... please wait.`);
+    // 7. Upload All (Upload Phase)
+    ui.notifications.info(`Uploading ${filesToUpload.length} frames... please wait.`);
+    
+    // Fix: Use correct namespace if available
+    const PickerClass = foundry.applications?.apps?.FilePicker || FilePicker;
+
+    const uploadPromises = filesToUpload.map(fileObj => {
+        return PickerClass.upload("data", savePath, fileObj, { bucket: null }, { notify: false })
+            .then(result => (typeof result === "string") ? result : result.path);
+    });
+
     const paths = await Promise.all(uploadPromises);
 
     if (paths.length > 0) {
         ui.notifications.info("Upload complete. Setting up token...");
         
         // 8. Auto-Setup (Manual Flag Construction to avoid Race Condition)
-        // Instead of calling detectAvailableFacings (which re-scans filesystem),
-        // we manually build the facing array based on what we just uploaded.
-        // This guarantees we don't fail due to filesystem lag.
-        
         const firstFilePath = paths[0];
-        // Calculate the "facings" array. Use "Numeric" mode logic (000, 001...)
-        
-        // We need to construct numeric angles.
-        // 360 degrees / total frames.
-        const total = paths.length;
-        const angleStep = 360 / total;
-        
-        const generatedFacings = [];
-        for (let i = 0; i < total; i++) {
-             // For numeric mode, we usually store just the angle? 
-             // detectAvailableFacings stores { angle: x, file: y }?
-             // No, detectAvailableFacings returns { found: ["0", "15", ...], mode: "numeric" }.
-             
-             // Wait, standard numeric format is simply the index/angle.
-             // Let's check Utils logic.
-             // If files are 000.png, 001.png...
-             // detectAvailableFacings parses these to numbers.
-             // So if we have 32 frames, we likely want to map them to 0..31 or 0..360?
-             // Usually it maps to ANGLE.
-             // But if the files are just indices, detectAvailableFacings might incorrectly map them if they aren't explicit angles.
-             // Actually, the renderer (isometric-renderer.js) handles "Numeric" by index usually?
-             // Let's look at `generateGallery`.
-             
-             // If we rely on standard detection, we'd need to rename files to `_angle.png`.
-             // But right now we name them `_000.png`.
-             // `detectAvailableFacings` likely sees these as 0, 1, 2...
-             
-             // So we will just supply the array of INDICES (as strings) which matches what detectAvailableFacings does for numbered files.
-             generatedFacings.push(i.toString()); // "0", "1", "2"...
+        if (!firstFilePath) {
+            ui.notifications.error("Failed to extract valid paths from uploaded frames.");
+            return;
         }
-        
-        const updateData = {};
-        const isActor = doc.documentName === "Actor";
-        
-        // Clear model path
-        updateData["flags.3d-to-iso.modelPath"] = null;
-        
-        updateData["flags.3d-to-iso.availableFacings"] = generatedFacings;
-        updateData["flags.3d-to-iso.facingMode"] = "numeric"; // Force numeric
-        updateData["flags.3d-to-iso.enabled"] = true;
 
-        // Set Texture
-        const srcKey = isActor ? "prototypeToken.texture.src" : "texture.src";
-        updateData[srcKey] = firstFilePath;
-        
-        if (isActor) {
-             updateData["prototypeToken.flags.3d-to-iso.enabled"] = true;
+        const generatedFacings = [];
+        for (let i = 0; i < paths.length; i++) {
+             generatedFacings.push(i.toString().padStart(3, "0"));
         }
         
-        await doc.update(updateData);
+        // 9. Sync Pending State (if app exists) to prevent stale UI during rerender
+        if (app) {
+            app._pendingSrc = firstFilePath;
+            app._pendingFacings = generatedFacings;
+        }
+
+        // Small delay to let filesystem breathe before we trigger rerenders via update
+        await new Promise(r => setTimeout(r, 250));
+        
+        await assignFacings(doc, firstFilePath, generatedFacings, "numeric", true);
         ui.notifications.info("Token setup complete!");
+
+        // Force Final Render
+        if (app) app.render();
     }
 }
