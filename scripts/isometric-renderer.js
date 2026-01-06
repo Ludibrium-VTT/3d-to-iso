@@ -57,26 +57,151 @@ const SKETCH_FRAGMENT_SHADER = `
     uniform sampler2D tDiffuse;
     uniform vec2 resolution;
     uniform float intensity;
+    uniform float uEdgeThreshold; // Controls SENSITIVITY of edges
+    uniform float uLineThickness; // Controls pure THICKNESS of lines
+    uniform float uHatching;      // Controls darkness of SHADOWS (Cross-hatch)
     varying vec2 vUv;
+
+    // Simplex 2D noise helpers (Ashima Arts)
+    vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+
+    float snoise(vec2 v){
+        const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                 -0.577350269189626, 0.024390243902439);
+        vec2 i  = floor(v + dot(v, C.yy) );
+        vec2 x0 = v -   i + dot(i, C.xx);
+        vec2 i1;
+        i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+        vec4 x12 = x0.xyxy + C.xxzz;
+        x12.xy -= i1;
+        i = mod(i, 289.0);
+        vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+        + i.x + vec3(0.0, i1.x, 1.0 ));
+        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+        m = m*m ;
+        m = m*m ;
+        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+        vec3 h = abs(x) - 0.5;
+        vec3 ox = floor(x + 0.5);
+        vec3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+        vec3 g;
+        g.x  = a0.x  * x0.x  + h.x  * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
+    }
+
     void main() {
-        vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
-        float tl = texture2D(tDiffuse, vUv + texel * vec2(-1, 1)).r;
-        float l  = texture2D(tDiffuse, vUv + texel * vec2(-1, 0)).r;
-        float bl = texture2D(tDiffuse, vUv + texel * vec2(-1,-1)).r;
-        float t  = texture2D(tDiffuse, vUv + texel * vec2( 0, 1)).r;
-        float b  = texture2D(tDiffuse, vUv + texel * vec2( 0,-1)).r;
-        float tr = texture2D(tDiffuse, vUv + texel * vec2( 1, 1)).r;
-        float r  = texture2D(tDiffuse, vUv + texel * vec2( 1, 0)).r;
-        float br = texture2D(tDiffuse, vUv + texel * vec2( 1,-1)).r;
-        float x = (tl + 2.0*l + bl) - (tr + 2.0*r + br);
-        float y = (tl + 2.0*t + tr) - (bl + 2.0*b + br);
-        float edge = sqrt(x*x + y*y);
+        // Distort UVs using noise to simulate hand-drawn wobble
+        float noiseScale = 0.003 * intensity; 
+        float noiseFreq = 15.0;   
         
-        vec4 color = texture2D(tDiffuse, vUv);
-        float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-        float sketch = clamp(1.0 - (edge * 4.0), 0.0, 1.0);
-        vec3 finalColor = vec3(gray * sketch);
-        gl_FragColor = vec4(mix(color.rgb, finalColor, intensity), color.a);
+        vec2 distort = vec2(
+            snoise(vUv * noiseFreq),
+            snoise((vUv + 100.0) * noiseFreq)
+        ) * noiseScale;
+        
+        vec2 uv = vUv + distort;
+
+        vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
+        vec3 w = vec3(0.299, 0.587, 0.114);
+        
+        // --- 1. DUAL EDGE DETECTION (Color + Alpha) ---
+        // We fetch vec4 to get both RGB and Alpha for the Sobel filter
+        vec4 n_tl = texture2D(tDiffuse, uv + texel * vec2(-1.0, 1.0));
+        vec4 n_l  = texture2D(tDiffuse, uv + texel * vec2(-1.0, 0.0));
+        vec4 n_bl = texture2D(tDiffuse, uv + texel * vec2(-1.0,-1.0));
+        vec4 n_t  = texture2D(tDiffuse, uv + texel * vec2( 0.0, 1.0));
+        vec4 n_b  = texture2D(tDiffuse, uv + texel * vec2( 0.0,-1.0));
+        vec4 n_tr = texture2D(tDiffuse, uv + texel * vec2( 1.0, 1.0));
+        vec4 n_r  = texture2D(tDiffuse, uv + texel * vec2( 1.0, 0.0));
+        vec4 n_br = texture2D(tDiffuse, uv + texel * vec2( 1.0,-1.0));
+
+        // -- Color Sobel (Internal Details) --
+        float gx = (dot(n_tl.rgb,w) + 2.0*dot(n_l.rgb,w) + dot(n_bl.rgb,w)) - (dot(n_tr.rgb,w) + 2.0*dot(n_r.rgb,w) + dot(n_br.rgb,w));
+        float gy = (dot(n_tl.rgb,w) + 2.0*dot(n_t.rgb,w) + dot(n_tr.rgb,w)) - (dot(n_bl.rgb,w) + 2.0*dot(n_b.rgb,w) + dot(n_br.rgb,w));
+        float cEdge = sqrt(gx*gx + gy*gy);
+
+        // -- Alpha Sobel (Silhouette) --
+        // This detects the boundary between the model and transparency.
+        float ax = (n_tl.a + 2.0*n_l.a + n_bl.a) - (n_tr.a + 2.0*n_r.a + n_br.a);
+        float ay = (n_tl.a + 2.0*n_t.a + n_tr.a) - (n_bl.a + 2.0*n_b.a + n_br.a);
+        float aEdge = sqrt(ax*ax + ay*ay);
+        
+        // Base Color
+        vec4 color = texture2D(tDiffuse, uv);
+        vec4 originalColor = texture2D(tDiffuse, vUv);
+        float rawLuma = dot(color.rgb, w);
+        
+        // --- 2. OUTLINE LOGIC ---
+        float baseThickness = mix(1.0, 8.0, uLineThickness); 
+        
+        // Darker (1.0 - rawLuma is high) -> Thicker lines.
+        // Lighter -> Thinner lines (down to 50%).
+        float sensitivity = mix(baseThickness * 0.5, baseThickness, (1.0 - rawLuma));
+        
+        float edgeStrength = cEdge * sensitivity; // Assuming 'edge' refers to cEdge for internal details
+        
+        // Threshold Modulation
+        float tStart = mix(0.6, 0.1, uEdgeThreshold);
+        float tEnd   = tStart + 0.2;
+        float outline = smoothstep(tStart, tEnd, edgeStrength);
+        
+        // --- 2. HATCHING (Density based on Darkness) ---
+        // Instead of changing frequency (moire), we layer strokes.
+        float darkness = 1.0 - rawLuma;
+        float hatchFactor = darkness * uHatching * 2.0; // Boost range
+        
+        // Layer 1: Diagonal / (Starts at darkness 0.3)
+        float h1 = sin((uv.x - uv.y) * 400.0);
+        float ink1 = smoothstep(0.4, 0.6, h1) * smoothstep(0.3, 0.5, hatchFactor);
+        
+        // Layer 2: Diagonal \ (Starts at darkness 0.6)
+        float h2 = sin((uv.x + uv.y) * 400.0);
+        float ink2 = smoothstep(0.4, 0.6, h2) * smoothstep(0.6, 0.8, hatchFactor);
+        
+        // Layer 3: Vertical | (Starts at darkness 0.8)
+        float h3 = sin(uv.x * 400.0);
+        float ink3 = smoothstep(0.4, 0.6, h3) * smoothstep(0.8, 1.0, hatchFactor);
+        
+        // Combine Hatches
+        float totalHatch = clamp(ink1 + ink2 + ink3, 0.0, 1.0);
+        
+        // --- 3. COMPOSITION ---
+        vec3 paper = vec3(1.0);
+        vec3 stroke = vec3(0.15); 
+        
+        vec3 wash = mix(vec3(rawLuma), color.rgb, 0.2); 
+        vec3 base = mix(paper, wash, 0.3);
+        
+        // Apply Hatching
+        base = mix(base, stroke, totalHatch);
+        
+        // Apply Color/Alpha Edges
+        // Combine edges: 
+        float cThreshold = mix(0.6, 0.1, uEdgeThreshold);
+        float internalOutline = smoothstep(cThreshold, cThreshold + 0.2, cEdge * sensitivity); // Use 'sensitivity' here too? Yes.
+        float silhouette = smoothstep(0.3, 0.8, aEdge * baseThickness); // Silhouette constant
+        
+        float finalOutline = max(internalOutline, silhouette);
+
+        vec3 finalSketch = mix(base, stroke, finalOutline);
+        
+        // Paper Grain
+        float textureNoise = snoise(uv * 200.0) * 0.05;
+        finalSketch -= textureNoise;
+        
+        // --- 5. ALPHA OUTPUT (Erosion) ---
+        float aU = texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).a;
+        float aD = texture2D(tDiffuse, vUv + vec2(0.0, -texel.y)).a;
+        float aL = texture2D(tDiffuse, vUv + vec2(-texel.x, 0.0)).a;
+        float aR = texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).a;
+        float minAlpha = min(originalColor.a, min(min(aU, aD), min(aL, aR)));
+        float alpha = smoothstep(0.5, 0.9, minAlpha);
+        
+        vec3 finalRGB = mix(originalColor.rgb, finalSketch, intensity);
+        
+        gl_FragColor = vec4(finalRGB, alpha);
     }
 `;
 
@@ -147,10 +272,15 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         this.currentModel = null;
         this.baseCameraDistance = 50;
         // Post-Processing
+        // Order matters for rendering sequence!
+        // We want Sketch (Base style) -> Pixel (Resample) -> Sepia (Tint everything)
         this.effects = {
-            sepia: 0,
+            sketch: 0,
+            sketchEdge: 1.0,      // New: Edge Threshold (Default 1.0)
+            sketchThickness: 0.5, // New: Line Thickness (Default 0.5)
+            sketchFill: 0.2,      // New: Hatching Strength (Default 0.2)
             pixel: 0,
-            sketch: 0
+            sepia: 0
         };
 
         this.postProcessing = {
@@ -453,6 +583,13 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             // Update Uniforms
             if (material.uniforms.tDiffuse) material.uniforms.tDiffuse.value = readBuffer.texture;
             if (material.uniforms.intensity) material.uniforms.intensity.value = intensity;
+            
+            // Pass Sketch parameters if present
+            if (effectName === "sketch") {
+                 if (material.uniforms.uEdgeThreshold) material.uniforms.uEdgeThreshold.value = this.effects.sketchEdge;
+                 if (material.uniforms.uLineThickness) material.uniforms.uLineThickness.value = this.effects.sketchThickness;
+                 if (material.uniforms.uHatching) material.uniforms.uHatching.value = this.effects.sketchFill;
+            }
             
             // Assign material to Quad and render
             pp.quad.material = material;
@@ -1650,7 +1787,10 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                 uniforms: {
                     tDiffuse: { value: null },
                     resolution: { value: new THREE.Vector2(size, size) },
-                    intensity: { value: 0 }
+                    intensity: { value: 0 },
+                    uEdgeThreshold: { value: 0.5 },
+                    uLineThickness: { value: 0.5 },
+                    uHatching: { value: 0.2 }
                 }
             });
             

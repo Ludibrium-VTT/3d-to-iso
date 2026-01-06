@@ -50,6 +50,7 @@
     "GeneratedGallery": "Available Facings",
     "RefreshFacings": "Find All Facings",
     "SelectTokenImage": "Setup Facings from Image",
+    "ImportGif": "Import Animated GIF",
     "RenderMode": "Render Mode",
     "ModeCardinal": "Cardinal Directions (8-Way)",
     "ModeNumeric": "Numeric Sequence (360°)",
