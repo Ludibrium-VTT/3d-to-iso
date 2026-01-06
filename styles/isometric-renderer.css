@@ -41,6 +41,11 @@
     margin-bottom: 0.75rem;
 }
 
+.isometric-renderer-app .form-fields input[type="number"] {
+    width: 80px;
+    flex: 0 0 auto;
+}
+
 .isometric-renderer-app .facings {
     display: flex;
     flex-wrap: wrap;
@@ -65,7 +70,8 @@
     flex: 1;
     background: rgba(0, 150, 200, 0.4);
     font-weight: bold;
-    height: 3rem;
+    min-height: 3rem;
+    padding: 5px 10px;
 }
 
 .isometric-renderer-app .render-btn:hover,
@@ -82,6 +88,7 @@
 .isometric-renderer-app .reset-buttons button {
     flex: 1;
     font-size: 0.8rem;
+    padding: 5px;
 }
 
 .isometric-renderer-app .target-actor {
@@ -94,12 +101,14 @@
 
 .isometric-renderer-app .assign-actor-btn {
     width: 100%;
-    height: 40px;
-    font-size: 1.1rem;
+    min-height: 40px;
+    padding: 5px 15px;
+    font-size: 1rem;
     font-weight: bold;
     background: #2b5d2b;
     color: white !important;
     border: 1px solid #1e3d1e;
+    line-height: 1.2;
 }
 
 .isometric-renderer-app .assign-actor-btn:hover {

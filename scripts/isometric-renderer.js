@@ -3,7 +3,7 @@ import { integrate3DToIso } from "./token.js";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 // V13 Compatibility: Resolve FilePicker implementation
-const FilePickerApp = foundry.applications?.apps?.FilePicker?.implementation;
+const FilePickerApp = foundry.applications?.apps?.FilePicker?.implementation || FilePicker;
 
 /* -------------------------------------------- */
 /*  Shaders                                     */
@@ -1144,81 +1144,97 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                  // Context Switching: Tile vs Token
                  const isTile = this.document?.documentName === "Tile";
                  
-                 let BrowserClass = IsometricRenderer.TokenBrowser;
+                  let BrowserClass = null;
+                  const TB = IsometricRenderer.TokenBrowser;
+                  const AB = IsometricRenderer.AssetBrowser;
 
-                 // Context Switching: Use a specialized Subclass for Tiles to bypass TokenBrowser's global cache
-                 if (isTile && IsometricRenderer.AssetBrowser) {
-                     if (!IsometricRenderer.TileBrowser) {
-                         IsometricRenderer.TileBrowser = class extends IsometricRenderer.TokenBrowser {
-                             get title() { return "Asset Browser"; }
-                             
-                             get sources() {
-                                 const sources = [...(IsometricRenderer.AssetBrowser.defaultSources || [])];
-                                 const custom = game.settings.get("canvas3dcompendium", "assetBrowserCustomPath");
-                                 if (custom) sources.push(custom);
-                                 sources.push("modules/canvas3dcompendium/assets/Vegetation_billboard/high_res");
-                                 return sources;
-                             }
+                  if (isTile && AB) {
+                      if (!IsometricRenderer.IsoTileBrowser) {
+                          IsometricRenderer.IsoTileBrowser = class extends TB {
+                              static _isoCache = null;
+                              static get defaultOptions() {
+                                  return foundry.utils.mergeObject(super.defaultOptions, {
+                                      id: "iso-tile-browser"
+                                  });
+                              }
+                              
+                              get title() {
+                                  return `Asset Browser: ${this._assetCount ?? 0} assets available`;
+                              }
 
-                             // Override _prepareContext to use STATIC class cache and bypass global module cache
-                             async _prepareContext() {
-                                 const data = {};
-                                 data.isTokenBrowser = false;//Don't show request token button
-                                 
-                                 // Use Static Class Cache if available (Persist across re-opens)
-                                 if (this.constructor._cache) {
-                                     this._assetCount = this.constructor._cache.materials.length;
-                                     return this.constructor._cache;
-                                 }
-                                 
-                                 const materials = [];
-                                 
-                                 // Use inherited getSources() which uses the internally imported getFiles()
-                                 // This bypasses the need for us to import it manually.
-                                 let files = [];
-                                 try {
-                                     files = await this.getSources();
-                                 } catch(e) {
-                                     console.error("3D-to-ISO | Error fetching sources:", e);
-                                 }
-                                 
-                                 // Process Files into Materials (Simplified Generic Logic)
-                                 // We removed the specific Token cleanup logic (MZ4250, etc) to avoid code duplication issues.
-                                 for (let file of files) {
-                                     const filename = file.split("/").pop();
-                                     // Generic cleanup: Remove extension, decode URL, replace underscores
-                                     const namePart = decodeURIComponent(filename.split(".")[0]);
-                                     const cleanName = namePart.replaceAll("_", " ");
-                                     
-                                     materials.push({
-                                         displayName: cleanName,
-                                         preview: file.replace(/\.(glb|gltf)$/i, ".webp"),
-                                         output: file,
-                                         search: filename, 
-                                         isNew: false, 
-                                         slug: cleanName.slugify ? cleanName.slugify({ strict: true }) : cleanName,
-                                     });
-                                 }
-                                 
-                                 // Sort Alphabetically
-                                 materials.sort((a, b) => a.displayName.localeCompare(b.displayName));
-                                 
-                                 data.materials = materials;
-                                 data.hasInput = true;
-                                 this._assetCount = materials.length;
-                                 
-                                 // Cache on Class (Static)
-                                 this.constructor._cache = data;
-                                 
-                                 return data;
-                             }
-                         }
-                     }
-                     BrowserClass = IsometricRenderer.TileBrowser;
-                 } else {
-                    // Ensure we use the base class for Tokens
-                    BrowserClass = IsometricRenderer.TokenBrowser;
-                 }
+                              get sources() {
+                                  const sources = [...(AB.defaultSources || [])];
+                                  const custom = game.settings.get("canvas3dcompendium", "assetBrowserCustomPath");
+                                  if (custom) sources.push(custom);
+                                  sources.push("modules/canvas3dcompendium/assets/Vegetation_billboard/high_res");
+                                  return sources;
+                              }
+                              // V12 Application Lifecycle
+                              async getData(options={}) {
+                                  if (this.constructor._isoCache) {
+                                      this._assetCount = this.constructor._isoCache.materials.length;
+                                      return this.constructor._isoCache;
+                                  }
+                                  const data = { isTokenBrowser: false, materials: [] };
+                                  let files = [];
+                                  try { files = await this.getSources(); } catch(e) {}
+                                  for (let file of files) {
+                                      const filename = file.split("/").pop();
+                                      const cleanName = decodeURIComponent(filename.split(".")[0]).replaceAll("_", " ");
+                                      data.materials.push({ displayName: cleanName, preview: file.replace(/\.(glb|gltf)$/i, ".webp"), output: file, search: filename, slug: cleanName.slugify ? cleanName.slugify({ strict: true }) : cleanName });
+                                  }
+                                  data.materials.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                                  data.hasInput = true;
+                                  this._assetCount = data.materials.length;
+                                  this.constructor._isoCache = data;
+                                  return data;
+                              }
+                              // V13+ Compatibility
+                              async _prepareContext() { return this.getData(); }
+                          };
+                      }
+                      BrowserClass = IsometricRenderer.IsoTileBrowser;
+                  } else {
+                      if (!IsometricRenderer.IsoTokenBrowser) {
+                          IsometricRenderer.IsoTokenBrowser = class extends TB {
+                              static _isoCache = null;
+                              static get defaultOptions() {
+                                  return foundry.utils.mergeObject(super.defaultOptions, {
+                                      id: "iso-token-browser"
+                                  });
+                              }
+
+                              get title() {
+                                  return `Token Browser: ${this._assetCount ?? 0} tokens available`;
+                              }
+
+                              // V12 Application Lifecycle
+                              async getData(options={}) {
+                                  if (this.constructor._isoCache) {
+                                      this._assetCount = this.constructor._isoCache.materials.length;
+                                      return this.constructor._isoCache;
+                                  }
+                                  const data = { isTokenBrowser: true, materials: [] };
+                                  let files = [];
+                                  try { files = await this.getSources(); } catch(e) {}
+                                  for (let file of files) {
+                                      const cleanedName = decodeURIComponent(file.split("/").pop().split(".").shift());
+                                      const filename = file.split("/").pop().replaceAll("%20", "_");
+                                      const cleanName = filename.replaceAll("_", " ").replace(".glb", "").replace("MZ4250 - ", "");
+                                      data.materials.push({ displayName: cleanName, preview: file.replace(".glb", ".webp"), output: file, search: file.split("/miniatures/_Colorized").pop() || filename, slug: cleanName.slugify({ strict: true }) });
+                                  }
+                                  data.materials.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                                  data.hasInput = true;
+                                  this._assetCount = data.materials.length;
+                                  this.constructor._isoCache = data;
+                                  return data;
+                              }
+                              // V13+ Compatibility
+                              async _prepareContext() { return this.getData(); }
+                          };
+                      }
+                      BrowserClass = IsometricRenderer.IsoTokenBrowser;
+                  }
                  
                  // Instantiate and Render
                  this.assetBrowser = new BrowserClass(proxyInput, this);
@@ -1239,40 +1255,39 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                  const p = this.assetBrowser.render(true);
                  
                  // Then Force Position (Handles both Sync and Async renders)
-                 const applyPos = () => {
-                     // Check if app is actually rendered
-                     if (!this.assetBrowser.element || (this.assetBrowser.element.length === 0 && !this.assetBrowser.element.style)) {
-                         // Not ready? Try one more delay?
-                         return;
-                     }
-                     
-                     if (this.assetBrowser.setPosition) {
-                         try {
-                             this.assetBrowser.setPosition({ left: targetLeft, top: rect.top });
-                         } catch (err) {
-                             // Fallback for V12 oddities or internal error
-                             console.warn("3D-to-ISO | setPosition failed, falling back to direct style", err);
-                             if (this.assetBrowser.element && this.assetBrowser.element.jquery) {
-                                  this.assetBrowser.element.css({ left: targetLeft, top: rect.top });
-                             } else if (this.assetBrowser.element instanceof HTMLElement) {
-                                  this.assetBrowser.element.style.left = `${targetLeft}px`;
-                                  this.assetBrowser.element.style.top = `${rect.top}px`;
-                             }
-                         }
-                     } else {
-                         // Fallback for weird App types or props
-                         if (this.assetBrowser.element && this.assetBrowser.element.length > 0) {
-                             // jQuery object
-                             this.assetBrowser.element.css({ left: targetLeft, top: rect.top });
-                         } else if (this.assetBrowser.element instanceof HTMLElement) {
-                             this.assetBrowser.element.style.left = `${targetLeft}px`;
-                             this.assetBrowser.element.style.top = `${rect.top}px`;
-                         }
-                     }
-                 };
-
-                 if (p instanceof Promise) p.then(applyPos);
-                 else applyPos();
+                 let retries = 0;
+                  const applyPos = () => {
+                      const isRendered = this.assetBrowser.rendered || (this.assetBrowser.element && (this.assetBrowser.element.length > 0 || this.assetBrowser.element.style));
+                      if (!isRendered) {
+                          if (retries < 10) {
+                              retries++;
+                              setTimeout(applyPos, 50);
+                          }
+                          return;
+                      }
+                      
+                      const el = this.assetBrowser.element;
+                      if (this.assetBrowser.setPosition) {
+                          try {
+                              this.assetBrowser.setPosition({ left: targetLeft, top: rect.top });
+                          } catch (err) {
+                              if (el && el.jquery) el.css({ left: targetLeft, top: rect.top });
+                              else if (el instanceof HTMLElement) {
+                                   el.style.left = `${targetLeft}px`;
+                                   el.style.top = `${rect.top}px`;
+                              }
+                          }
+                      } else {
+                          if (el && (el.jquery || el.length > 0)) $(el).css({ left: targetLeft, top: rect.top });
+                          else if (el instanceof HTMLElement) {
+                              el.style.left = `${targetLeft}px`;
+                              el.style.top = `${rect.top}px`;
+                          }
+                      }
+                  };
+  
+                  if (p instanceof Promise) p.then(applyPos);
+                  else applyPos();
              });
         }
     }
