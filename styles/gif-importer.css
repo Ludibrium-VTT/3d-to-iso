@@ -1,7 +1,7 @@
 /* GIF Importer ApplicationV2 Styling */
-.gif-importer-config {
-    /* Ensure application styling is good */
-}
+/* .gif-importer-config {
+    //Ensure application styling is good 
+} */
 
 /* Ensure Form Groups are standard layout (Row) */
 .gif-importer-config .form-group {
@@ -90,9 +90,18 @@
     justify-content: center;
     align-items: center;
     gap: 5px;
-    background: var(--button-background);
-    color: var(--button-text);
-    border: 1px solid var(--button-border);
+    background: #2b5d2b;
+    color: white;
+    border: 1px solid #1e3d1e;
+    min-height: 40px;
+    font-size: 1rem;
+    font-weight: bold;
+    line-height: 1.2;
+}
+
+.gif-importer-config .save-button:hover {
+    background: #3a7a3a;
+    box-shadow: 0 0 5px #3a7a3a;
 }
 
 /* HR styling */

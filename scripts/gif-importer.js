@@ -242,7 +242,7 @@ export async function importGif(file, doc, app = null) {
         return new Promise(resolve => canvas.toBlob(resolve, "image/png"));
     };
     
-    let savedIndex = 0;
+    const capturedBlobs = [];
 
     for (let i = 0; i < frameCount; i++) {
         // Reset pixel buffer (safe default)
@@ -261,12 +261,31 @@ export async function importGif(file, doc, app = null) {
         ctx.putImageData(imageData, 0, 0);
 
         const blob = await getCanvasBlob(canvas);
-        const fileName = `${filename}_${savedIndex.toString().padStart(3, "0")}.png`;
-        const fileObj = new File([blob], fileName, { type: "image/png" });
-
-        filesToUpload.push(fileObj);
-        savedIndex++;
+        capturedBlobs.push(blob);
     }
+    
+    // Fix Rotation Direction:
+    // Foundry Rotation is Clockwise (0 -> 90 -> 180).
+    // Standard GIFs (e.g. Hero Forge) rotate the Model Clockwise (Front -> Right -> Back -> Left).
+    // However, looking "West" (90deg) usually means seeing the LEFT side.
+    // If we use Frame 90deg (Right Profile), we have a mismatch.
+    // We need to invert the sequence so that Frame 1 becomes Frame N (Slight Left), etc.
+    // Keep Frame 0 (Front) as is.
+    
+    const reorderedBlobs = [];
+    if (capturedBlobs.length > 0) {
+        reorderedBlobs.push(capturedBlobs[0]);
+        // Push the rest in reverse order
+        for (let i = capturedBlobs.length - 1; i > 0; i--) {
+            reorderedBlobs.push(capturedBlobs[i]);
+        }
+    }
+
+    reorderedBlobs.forEach((blob, index) => {
+        const fileName = `${filename}_${index.toString().padStart(3, "0")}.png`;
+        const fileObj = new File([blob], fileName, { type: "image/png" });
+        filesToUpload.push(fileObj);
+    });
 
     // 7. Upload All (Upload Phase)
     ui.notifications.info(`Uploading ${filesToUpload.length} frames... please wait.`);

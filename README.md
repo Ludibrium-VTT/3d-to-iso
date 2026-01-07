@@ -95,6 +95,18 @@ Append the frame number or angle index to the filename.
 5. Choose **ANY** one of the sprite files in the folder (e.g., `Fighter_S.png`).
 6. The module will automatically scan the folder for all matching siblings (`Fighter_N.png`, etc.) and set them up for rotation.
 
+### Importing Animated GIFs
+You can also import animated GIFs (compatible with Hero Forge spinning GIFs) and automatically convert them into a sprite sequence.
+1. Click **"Import Animated GIF"** in the **Iso3D** tab.
+2. Select your GIF file.
+3. A configuration dialog will appear:
+   - **Key Color**: Configure the background color to remove. The tool automatically attempts to detect the background color from the top-left pixel.
+   - **Tolerance**: Adjusts how strictly colors must match the Key Color to be removed.
+     - *Tip*: If parts of your token art are becoming transparent, **lower the tolerance** or change the Key Color to something that doesn't appear on your character.
+   - **Sample Every Nth Frame**: Allows you to skip frames to reduce file size and total frame count.
+     - *Example*: If you have a 60-frame GIF, setting this to `2` will result in 30 frames (every second frame is kept). This is great for high-framerate source material where you don't need 60 images for a token rotation. By default this is set to make a 32 frame image set from a 160 frame Hero Forge GIF.
+4. Click **Import**. The module will extract the frames, remove the background, upload them to your server, and configure the token.
+
 ---
 
 ## Recommended Modules
