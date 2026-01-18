@@ -9,7 +9,8 @@ This module is designed to work seamlessly with **Isometric Perspective** and ot
 
 ## Key Features
 
-- **3D Model Import**: Load `.glb` or `.gltf` models directly into your Token or Tile configuration. More model formats will be added in future, but I've kept it simple for now.
+- **3D Model Import**: Load `.glb`, `.gltf`, `.fbx`, `.obj`, or `.stl` models directly into your Token or Tile configuration. 
+  - *Note for FBX*: The loader expects textures to be in the same directory as the `.fbx` file if they are not embedded.
 - **Isometric Rendering**: Converts 3D models into pre-rendered 2D isometric sprites.
 - **Automatic Facing Integration**: Generated sprites are automatically assigned to directional facings. Rotating your token in-game instantly swaps to the correct sprite, creating a seamless pseudo-3D effect.
 - **Renderer Studio**: A dedicated interface to fine-tune your assets before rendering:

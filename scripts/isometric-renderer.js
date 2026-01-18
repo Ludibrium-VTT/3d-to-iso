@@ -202,7 +202,12 @@ const SKETCH_FRAGMENT_SHADER = `
         
         vec3 finalRGB = mix(originalColor.rgb, finalSketch, intensity);
         
-        gl_FragColor = vec4(finalRGB, alpha);
+        // Strict masking for background to prevent noise leakage
+        if (alpha <= 0.05) {
+             gl_FragColor = vec4(0.0);
+        } else {
+             gl_FragColor = vec4(finalRGB, alpha);
+        }
     }
 `;
 
@@ -545,6 +550,23 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         dracoLoader.setDecoderPath("modules/3d-to-iso/vendor/draco/");
         this.loader.setDRACOLoader(dracoLoader);
 
+        // Helper Manager to report missing textures (common with FBX/OBJ)
+        const loadingManager = new THREE.LoadingManager();
+        loadingManager.onError = (url) => {
+            // Prevent spamming the same error
+            if (this._lastErrorUrl === url) return;
+            this._lastErrorUrl = url;
+            
+            const fileName = url.split('/').pop().split('?')[0];
+            ui.notifications.warn(`Failed to load texture "${fileName}".\nExpected at: "${url}"`);
+            console.warn(`3D-to-ISO | Missing resource: ${url}`);
+        };
+
+        this.fbxLoader = new THREE.FBXLoader(loadingManager);
+        this.stlLoader = new THREE.STLLoader(loadingManager);
+        this.objLoader = new THREE.OBJLoader(loadingManager);
+        this.mtlLoader = new THREE.MTLLoader(loadingManager);
+
         // Initial render trigger
         if (this.modelPath) this._loadModel(this.modelPath);
         
@@ -765,11 +787,37 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
 
         try {
-            const gltf = await new Promise((resolve, reject) => {
-                this.loader.load(path, resolve, undefined, reject);
-            });
+            const ext = path.split('.').pop().toLowerCase();
+            let model;
 
-            this.currentModel = gltf.scene;
+            if (ext === "glb" || ext === "gltf") {
+                const gltf = await this.loader.loadAsync(path);
+                model = gltf.scene;
+            } else if (ext === "fbx") {
+                model = await this.fbxLoader.loadAsync(path);
+            } else if (ext === "stl") {
+                const geometry = await this.stlLoader.loadAsync(path);
+                const material = new THREE.MeshStandardMaterial({ color: 0x808080 });
+                model = new THREE.Mesh(geometry, material);
+                // STL often needs rotation correction (commonly -90 X)
+                model.rotation.set(-Math.PI / 2, 0, 0); 
+            } else if (ext === "obj") {
+                 // Attempt to load associated MTL file
+                 const mtlPath = path.substring(0, path.lastIndexOf(".")) + ".mtl";
+                 try {
+                     const materials = await this.mtlLoader.loadAsync(mtlPath);
+                     materials.preload();
+                     this.objLoader.setMaterials(materials);
+                 } catch (e) {
+                     // access failure usually means no MTL exists, which is fine
+                     this.objLoader.setMaterials(null);
+                 }
+                 model = await this.objLoader.loadAsync(path);
+            } else {
+                throw new Error("Unsupported file extension: " + ext);
+            }
+
+            this.currentModel = model;
             this.modelWrapper.add(this.currentModel);
 
             // Sanitize Materials: Ensure all models react to lighting (Miniature Style)
@@ -783,36 +831,63 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                     if (child.material) {
                         const materials = Array.isArray(child.material) ? child.material : [child.material];
                         for (let mat of materials) {
+                            // Ensure materials are responsive to light
+                            if (!mat.isMeshStandardMaterial && !mat.isMeshPhysicalMaterial && !mat.isMeshPhongMaterial) {
+                                // If it's a basic material (unlit), we might want to convert it to Phong/Standard?
+                                // For now, just tweak properties if they exist.
+                            }
+
                             if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
                                 // Clamp Metalness to 0 to ensure response to Ambient Light
                                 if (mat.metalness > 0) mat.metalness = 0;
                                 // Ideally ensure some roughness to prevent super-sharp speculars on plastic
                                 if (mat.roughness < 0.4) mat.roughness = 0.4;
                             }
+                            
+                            // Robustness: Force DoubleSide and AlphaTeat to prevent sorting/culling artifacts
+                            mat.side = THREE.DoubleSide; 
+                            if (mat.transparent) mat.alphaTest = 0.5;
                         }
                     }
                 }
             });
 
-            // Compute precise bounding box including all children
+            // Compute precise bounding box from MESHES ONLY to avoid stray helpers/lights
             this.currentModel.updateMatrixWorld(true);
-            const box = new THREE.Box3().setFromObject(this.modelWrapper);
+            const box = new THREE.Box3();
+            let hasMeshes = false;
+            
+            this.currentModel.traverse((child) => {
+                if (child.isMesh) {
+                    hasMeshes = true;
+                    box.expandByObject(child);
+                }
+            });
+            
+            // Fallback: Use everything if no meshes found
+            if (!hasMeshes) {
+                box.setFromObject(this.modelWrapper);
+            }
             
             const center = new THREE.Vector3();
             const size = new THREE.Vector3();
-            box.getCenter(center);
-            box.getSize(size);
+            if(!box.isEmpty()) {
+                box.getCenter(center);
+                box.getSize(size);
 
-            // Shift currentModel within modelWrapper so the center of its geometry is at (0,0,0)
-            this.currentModel.position.sub(center);
+                // Shift currentModel within modelWrapper so the center of its geometry is at (0,0,0)
+                this.currentModel.position.sub(center);
             
-            // Store the "Visual Center" position to use as base for pivot offsets
-            this._baseModelPosition = this.currentModel.position.clone();
+                // Store the "Visual Center" position to use as base for pivot offsets
+                this._baseModelPosition = this.currentModel.position.clone();
 
-            // Auto-scale modelWrapper to fit comfortably in ortho view
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = (maxDim > 0) ? 6 / maxDim : 1; 
-            this.modelWrapper.scale.setScalar(scale);
+                // Auto-scale modelWrapper to fit comfortably in ortho view
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const scale = (maxDim > 0) ? 6 / maxDim : 1; 
+                this.modelWrapper.scale.multiplyScalar(scale);
+            } else {
+                console.warn("Bounding box is empty. Model might be invisible or invalid.");
+            }
 
             // Force immediate update of camera and projection
             this._updateCameraRotation();
@@ -1045,7 +1120,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
                         await this._loadModel(path, true);
                     }
                 });
-                fp.extensions = [".glb", ".gltf"];
+                fp.extensions = [".glb", ".gltf", ".fbx", ".obj", ".stl"];
                 fp.render(true);
             });
         }
@@ -1076,6 +1151,32 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             this._resetAdjustments();
             this._updateCameraRotation();
             this.render();
+        });
+
+        // Quick Rotation Buttons
+        html.querySelectorAll(".rotate-btn").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                if (this._pickingPivot) return;
+                const axis = btn.dataset.axis; // rx, ry, rz
+                const amount = parseFloat(btn.dataset.amount);
+                
+                // Get current value
+                let current = this.linkRotations && this.adjustments["N"] ? this.adjustments["N"][axis] : getAdj()[axis];
+                
+                // Add amount
+                let newValue = (current + amount) % 360;
+                
+                if (this.linkRotations) this._syncRotation(axis, newValue);
+                else getAdj()[axis] = newValue;
+                
+                // Update HUD immediately
+                if(this.element) {
+                    const display = this.element.querySelector(`.display-${axis}`);
+                    if (display) display.textContent = `${newValue.toFixed(0)}°`;
+                }
+
+                this._updateCameraRotation();
+            });
         });
 
         // Browse 3D Library Button

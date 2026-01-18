@@ -17,7 +17,12 @@
   "scripts": [
     "vendor/three.min.js",
     "vendor/GLTFLoader.js",
-    "vendor/DRACOLoader.js"
+    "vendor/DRACOLoader.js",
+    "vendor/fflate.min.js",
+    "vendor/FBXLoader.js",
+    "vendor/STLLoader.js",
+    "vendor/MTLLoader.js",
+    "vendor/OBJLoader.js"
   ],
   "esmodules": [
     "scripts/utils.js",
