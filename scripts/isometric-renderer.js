@@ -336,6 +336,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             else this.adjustments[this.facing] = adj;
         }
 
+        // Lazy fetch UI classes to avoid V14 hook race conditions
+        if (!IsometricRenderer.TokenBrowser || !IsometricRenderer.AssetBrowser) {
+            const config = { UI: {} };
+            Hooks.callAll("3DCanvasConfig", config);
+            if (config.UI.TokenBrowser) IsometricRenderer.TokenBrowser = config.UI.TokenBrowser;
+            if (config.UI.AssetBrowser) IsometricRenderer.AssetBrowser = config.UI.AssetBrowser;
+        }
+
         return {
             modelPath: this.modelPath,
             renderMode: this.renderMode,
@@ -1938,16 +1946,9 @@ Hooks.once("ready", () => {
     const compendium = game.modules.get("canvas3dcompendium");
 
     if (compendium?.active && !canvas3D?.active) {
-         if (game.settings.get("canvas3dcompendium", "autoApply")) {
+         if (game.settings.settings.has("canvas3dcompendium.autoApply") && game.settings.get("canvas3dcompendium", "autoApply")) {
              console.warn("3D-to-ISO: Disabling 'autoApply' in canvas3dcompendium because levels-3d-preview is not active to prevent flag errors.");
              game.settings.set("canvas3dcompendium", "autoApply", false);
          }
-    }
-
-    if ((!IsometricRenderer.TokenBrowser || !IsometricRenderer.AssetBrowser) && compendium?.active && !canvas3D?.active) {
-        const config = { UI: {} };
-        Hooks.callAll("3DCanvasConfig", config);
-        if (config.UI.TokenBrowser) IsometricRenderer.TokenBrowser = config.UI.TokenBrowser;
-        if (config.UI.AssetBrowser) IsometricRenderer.AssetBrowser = config.UI.AssetBrowser;
     }
 });
