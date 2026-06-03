@@ -52,10 +52,6 @@ Hooks.on("renderSettingsConfig", (app, html, data) => {
     const footerContent = `
     <div class="form-group settings-footer" style="flex: 100%; text-align: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-border-light-2);">
         <p style="margin-bottom: 5px;">Developed by <a href="https://github.com/Ludibrium-VTT" target="_blank">Ludibrium VTT</a></p>
-        <p style="margin: 0;">
-            <a href="https://discord.gg/2Naz5966Up" target="_blank" style="margin-right: 10px;"><i class="fab fa-discord"></i> Discord</a>
-            <a href="https://www.patreon.com/cw/LudibriumVTT" target="_blank"><i class="fab fa-patreon"></i> Patreon</a>
-        </p>
     </div>
     `;
 

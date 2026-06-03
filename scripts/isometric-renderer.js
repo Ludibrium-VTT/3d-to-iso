@@ -217,6 +217,7 @@ const SKETCH_FRAGMENT_SHADER = `
 export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static TokenBrowser = null;
+    static AssetBrowser = null;
 
     constructor(options = {}) {
         super(options);
@@ -322,6 +323,29 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
     /* -------------------------------------------- */
 
+    static getBrowsers() {
+        if (!IsometricRenderer.TokenBrowser || !IsometricRenderer.AssetBrowser) {
+            const uiConfig = game.Levels3DPreview?.CONFIG?.UI || game.canvas3d?.CONFIG?.UI;
+            if (uiConfig) {
+                if (uiConfig.TokenBrowser) IsometricRenderer.TokenBrowser = uiConfig.TokenBrowser;
+                if (uiConfig.AssetBrowser) IsometricRenderer.AssetBrowser = uiConfig.AssetBrowser;
+            }
+            
+            if (!IsometricRenderer.TokenBrowser || !IsometricRenderer.AssetBrowser) {
+                const config = { UI: {} };
+                Hooks.callAll("3DCanvasConfig", config);
+                if (config.UI.TokenBrowser) IsometricRenderer.TokenBrowser = config.UI.TokenBrowser;
+                if (config.UI.AssetBrowser) IsometricRenderer.AssetBrowser = config.UI.AssetBrowser;
+            }
+        }
+        return {
+            TokenBrowser: IsometricRenderer.TokenBrowser,
+            AssetBrowser: IsometricRenderer.AssetBrowser
+        };
+    }
+
+    /* -------------------------------------------- */
+
     async _prepareContext(options) {
         // Resolve adjustment object based on mode
         let adj = (this.renderMode === "numeric") 
@@ -337,12 +361,7 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
         }
 
         // Lazy fetch UI classes to avoid V14 hook race conditions
-        if (!IsometricRenderer.TokenBrowser || !IsometricRenderer.AssetBrowser) {
-            const config = { UI: {} };
-            Hooks.callAll("3DCanvasConfig", config);
-            if (config.UI.TokenBrowser) IsometricRenderer.TokenBrowser = config.UI.TokenBrowser;
-            if (config.UI.AssetBrowser) IsometricRenderer.AssetBrowser = config.UI.AssetBrowser;
-        }
+        IsometricRenderer.getBrowsers();
 
         return {
             modelPath: this.modelPath,
@@ -359,8 +378,8 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
             ambientIntensity: this.ambientIntensity,
             linkRotations: this.linkRotations,
             hasTokenBrowser: (this.document?.documentName === "Tile") 
-                ? (!!IsometricRenderer.AssetBrowser && game.modules.get("canvas3dcompendium")?.active)
-                : (!!IsometricRenderer.TokenBrowser && game.modules.get("canvas3dtokencompendium")?.active),
+                ? (!!IsometricRenderer.AssetBrowser && (game.modules.get("levels-3d-preview")?.active || game.modules.get("canvas3dcompendium")?.active))
+                : (!!IsometricRenderer.TokenBrowser && (game.modules.get("levels-3d-preview")?.active || game.modules.get("canvas3dtokencompendium")?.active)),
             adj: adj,
             actor: this.actor, // Keep for backward compat within template if needed
             document: this.document, // Expose generic document
@@ -1189,49 +1208,53 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
         // Browse 3D Library Button
         const browseBtn = html.querySelector(".browse-3d-btn");
+        IsometricRenderer.getBrowsers();
         if (browseBtn && IsometricRenderer.TokenBrowser) {
              browseBtn.addEventListener("click", async () => {
                  const input = html.querySelector('input[name="modelPath"]');
                  
-                 // Mock jQuery Helper for compatibility with TokenBrowser (canvas3dcompendium)
-                 // This allows us to avoid using the global $ object.
-                 const mockJQuery = (el) => ({
-                    0: el,
-                    length: el ? 1 : 0,
-                    val: function(v) {
-                        if (v !== undefined) {
-                            if (el) el.value = v;
-                            return this;
-                        }
-                        return el ? el.value : undefined;
-                    },
-                    // Add other jQuery methods if needed by external module
-                 });
+                 // Helper to wrap DOM elements to be compatible with both modern vanilla JS (V12+)
+                 // and legacy jQuery (canvas3dcompendium) expectations in TokenBrowser/AssetBrowser.
+                 const makeCompatibleElement = (el) => {
+                     if (!el) return null;
+                     return new Proxy(el, {
+                         get(target, prop) {
+                             if (prop === 'val') {
+                                 return function(v) {
+                                     if (v !== undefined) {
+                                         target.value = v;
+                                         target.dispatchEvent(new Event("change", { bubbles: true }));
+                                         return this;
+                                     }
+                                     return target.value;
+                                 };
+                             }
+                             if (prop === '0') return target;
+                             if (prop === 'get') return (idx) => (idx === 0 ? target : undefined);
+                             if (prop === 'length') return 1;
+                             if (prop === 'closest') {
+                                 return (sel) => makeCompatibleElement(target.closest(sel));
+                             }
+                             
+                             // Delegate to raw element
+                             const val = target[prop];
+                             if (typeof val === 'function') {
+                                 return val.bind(target);
+                             }
+                             return val;
+                         },
+                         set(target, prop, value) {
+                             target[prop] = value;
+                             if (prop === 'value') {
+                                 target.dispatchEvent(new Event("change", { bubbles: true }));
+                             }
+                             return true;
+                         }
+                     });
+                 };
 
                  // Create a proxy input to trap the value set by TokenBrowser and trigger a change event
-                 const proxyInput = {
-                     get value() { return input.value; },
-                     set value(val) {
-                         input.value = val;
-                         input.dispatchEvent(new Event("change", { bubbles: true }));
-                     },
-                     // Standard DOM properties
-                     closest: (sel) => mockJQuery(input.closest(sel)),
-                     getAttribute: (attr) => input.getAttribute(attr),
-                     
-                     // jQuery compatibility for TokenBrowser (root level)
-                     val: function(v) {
-                        if (v !== undefined) {
-                            this.value = v;
-                            return this; 
-                        }
-                        return this.value; 
-                     },
-                     // Some jQuery plugins try to access the raw element via [0] or .get(0)
-                     0: input,
-                     get: (idx) => (idx === 0 ? input : undefined),
-                     length: 1
-                 };
+                 const proxyInput = makeCompatibleElement(input);
 
                  // Context Switching: Tile vs Token
                  const isTile = this.document?.documentName === "Tile";
@@ -1256,7 +1279,14 @@ export class IsometricRenderer extends HandlebarsApplicationMixin(ApplicationV2)
 
                               get sources() {
                                   const sources = [...(AB.defaultSources || [])];
-                                  const custom = game.settings.get("canvas3dcompendium", "assetBrowserCustomPath");
+                                  let custom = null;
+                                  try {
+                                      if (game.settings.settings.has("levels-3d-preview.assetBrowserCustomPath")) {
+                                          custom = game.settings.get("levels-3d-preview", "assetBrowserCustomPath");
+                                      } else if (game.settings.settings.has("canvas3dcompendium.assetBrowserCustomPath")) {
+                                          custom = game.settings.get("canvas3dcompendium", "assetBrowserCustomPath");
+                                      }
+                                  } catch (e) {}
                                   if (custom) sources.push(custom);
                                   sources.push("modules/canvas3dcompendium/assets/Vegetation_billboard/high_res");
                                   return sources;

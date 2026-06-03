@@ -4,8 +4,11 @@
 
 This module is designed to work seamlessly with **Isometric Perspective** and other isometric tools.
 > [!NOTE]
-> **Foundry V13 & V12 Compatibility**
-> While this module is primarily designed for Foundry V13, compatibility patches have been introduced to support Foundry V12. Please note that V12 support is a secondary focus and some advanced features may be optimized for V13.
+> **Foundry V14 Exclusivity (Version 0.5.0+)**
+> Starting with version `0.5.0`, this module is built exclusively for **Foundry V14**.
+> 
+> For older Foundry VTT installations:
+> - **Version 0.4.0** supports Foundry V13 and V12 (with compatibility patches). Please note that V12 support is a secondary focus and some advanced features may be optimized for V13.
 
 ## Key Features
 
